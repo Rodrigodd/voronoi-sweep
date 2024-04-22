@@ -7,10 +7,32 @@ use std::collections::{BinaryHeap, HashMap};
 
 use macroquad::prelude::*;
 
+#[cfg(test)]
+mod test;
+
 /// A point in 2D space. it is ordered in lexicographic order.
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Copy)]
 pub struct Point {
     pos: Vec2,
+}
+impl std::fmt::Debug for Point {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // f.debug_tuple("Point")
+        //     .field(&self.pos.x)
+        //     .field(&self.pos.y)
+        //     .finish()
+        match ((self.pos.x * 100.0) as u32, (self.pos.y * 100.0) as u32) {
+            (400, 000) => f.write_str("p"),
+            (000, 100) => f.write_str("q"),
+            (500, 200) => f.write_str("r"),
+            (500, 300) => f.write_str("s"),
+            _ => f
+                .debug_tuple("Point")
+                .field(&self.pos.x)
+                .field(&self.pos.y)
+                .finish(),
+        }
+    }
 }
 impl std::hash::Hash for Point {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -34,8 +56,8 @@ impl Ord for Point {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-enum Event {
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+pub enum Event {
     /// A site.
     Site(Point),
     /// (p, (q, r, s)), where p is a intersection between Cqr and Crs.
@@ -43,6 +65,7 @@ enum Event {
 }
 
 /// A benchline is a interleaved sequence of regions and boundaries.
+#[derive(Clone)]
 pub struct Benchline {
     /// The regions and boundaries in the benchline.
     ///
@@ -70,12 +93,12 @@ impl Benchline {
     /// The regions fills the entire space, so there is always a region that contains the point.
     fn find_region(&self, p: Point) -> usize {
         // debug print
-        println!("find_region for {:?}", p);
-        for (r, b) in self.regions.iter() {
-            println!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
-        }
+        // println!("find_region for {:?}", p);
+        // for (r, b) in self.regions.iter() {
+        //     println!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
+        // }
 
-        for (i, (_, b)) in self.regions[..self.regions.len() - 1].iter().enumerate() {
+        for (i, (r, b)) in self.regions[..self.regions.len() - 1].iter().enumerate() {
             if b.star_cmp(p) == std::cmp::Ordering::Less {
                 return i;
             }
@@ -86,10 +109,11 @@ impl Benchline {
 
     /// Find the index of region `r`, whose neighbors are `q` and `s`.
     fn find_region3(&self, q: Point, r: Point, s: Point) -> usize {
-        println!("find_region3");
-        for (r, b) in self.regions.iter() {
-            println!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
-        }
+        // println!("find_region3 {:?} {:?} {:?}", q, r, s);
+        // for (r, b) in self.regions.iter() {
+        //     println!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
+        // }
+
         for (i, window) in self.regions.windows(3).enumerate() {
             if q == window[0].0 && r == window[1].0 && s == window[2].0 {
                 return i + 1;
@@ -102,6 +126,7 @@ impl Benchline {
     /// Insert a new region within the region at the given index.
     fn insert(&mut self, region_idx: usize, region: (Bisector, Point, Bisector)) {
         let (p, h) = self.regions[region_idx];
+
         let (hl, q, hr) = region;
         self.regions
             .splice(region_idx..=region_idx, [(p, hl), (q, hr), (p, h)]);
@@ -145,7 +170,7 @@ impl Benchline {
 /// - S.J. Fortune, A sweepline algorithm for Voronoi diagrams, Algorithmica 2 (1987) 153–174.
 pub fn fortune_algorithm(
     sites: &[Point],
-    on_progress: &mut impl FnMut(&Benchline),
+    on_progress: &mut impl FnMut(&Benchline, &BinaryHeap<Reverse<Event>>),
 ) -> HashMap<Point, Vec<Point>> {
     // Algorithm 1: Computation of V*(S).
     // Input:
@@ -176,10 +201,11 @@ pub fn fortune_algorithm(
     // 3. L <- the list containing Rp.
     let mut benchline = Benchline::new(p);
 
+    on_progress(&benchline, &events);
+
     // 4. while Q is not empty begin
     // 5. p <- extract min(Q)
     while let Some(Reverse(event)) = events.pop() {
-        on_progress(&benchline);
         println!("event {:?} of {:?}", event, events);
         // 6. case
         match event {
@@ -214,6 +240,7 @@ pub fn fortune_algorithm(
                     let r = benchline.get_region(q_idx);
                     let s = benchline.get_region(q_idx + 1);
                     events.push(Reverse(Event::Intersection(p, (q, r, s))));
+                    println!("l intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
                 }
 
                 'right: {
@@ -228,6 +255,7 @@ pub fn fortune_algorithm(
                     let r = benchline.get_region(q_idx + 2);
                     let s = benchline.get_region(q_idx + 3);
                     events.push(Reverse(Event::Intersection(p, (q, r, s))));
+                    println!("r intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
                 }
             }
             // 13. p is an intersection:
@@ -239,51 +267,100 @@ pub fn fortune_algorithm(
 
                 // 16. Update list L so it contains Cqs = Cqs- or Cqs+,as appropriate, instead of Cqr, R*r, Crs.
                 let r_idx = benchline.find_region3(q, r, s);
-                let cqr = if q > r { bqs.c_plus() } else { bqs.c_minus() };
-                benchline.remove(r_idx, cqr);
+                let cqs = if p.pos.x < r.pos.x {
+                    bqs.c_minus()
+                } else {
+                    bqs.c_plus()
+                };
+
+                let cqr = benchline.get_left_boundary(r_idx).unwrap();
+                let crs = benchline.get_righ_boundary(r_idx).unwrap();
+
+                benchline.remove(r_idx, cqs);
 
                 // 17. Delete from Q any intersection between Cqr and its neighbor to the left and between Crs and its neighbor to the right.
-
-                // 18. Insert any intersections between Cqs and its neighbors to the left or right into Q.
                 'left: {
                     let Some(left_neighbor) = benchline.get_left_boundary(r_idx - 1) else {
                         break 'left;
                     };
-                    let Some(p) = cqr.star_intersection(left_neighbor) else {
-                        break 'left;
-                    };
 
-                    let q = benchline.get_region(r_idx - 2);
-                    let r = benchline.get_region(r_idx - 1);
-                    let s = benchline.get_region(r_idx);
-                    println!("left: {:?}, {:?}, {:?}", q, r, s);
-                    events.push(Reverse(Event::Intersection(p, (q, r, s))));
+                    events.retain(|Reverse(e)| match e {
+                        &Event::Intersection(_, (a, b, c)) => {
+                            let retain = !((a == left_neighbor.a || a == left_neighbor.b)
+                                && (b == cqr.a || b == cqr.b)
+                                && (c == cqr.a || c == cqr.b));
+
+                            if !retain {
+                                println!("removing {:?}", e);
+                            }
+
+                            retain
+                        }
+                        _ => true,
+                    });
                 }
 
                 'right: {
                     let Some(right_neighbor) = benchline.get_righ_boundary(r_idx) else {
                         break 'right;
                     };
-                    let Some(p) = cqr.star_intersection(right_neighbor) else {
+
+                    events.retain(|Reverse(e)| match e {
+                        &Event::Intersection(_, (a, b, c)) => {
+                            let retain = !((a == crs.a || a == crs.b)
+                                && (b == crs.a || b == crs.b)
+                                && (c == right_neighbor.a || c == right_neighbor.b));
+
+                            if !retain {
+                                println!("removing {:?}", e);
+                            }
+
+                            retain
+                        }
+                        _ => true,
+                    });
+                }
+
+                // 18. Insert any intersections between Cqs and its neighbors to the left or right into Q.
+                'left: {
+                    let Some(left_neighbor) = benchline.get_left_boundary(r_idx - 1) else {
+                        break 'left;
+                    };
+                    let Some(p) = cqs.star_intersection(left_neighbor) else {
+                        break 'left;
+                    };
+
+                    let q = benchline.get_region(r_idx - 2);
+                    let r = benchline.get_region(r_idx - 1);
+                    let s = benchline.get_region(r_idx);
+                    events.push(Reverse(Event::Intersection(p, (q, r, s))));
+                    println!("il intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
+                }
+
+                'right: {
+                    let Some(right_neighbor) = benchline.get_righ_boundary(r_idx) else {
+                        break 'right;
+                    };
+                    let Some(p) = cqs.star_intersection(right_neighbor) else {
                         break 'right;
                     };
 
                     let q = benchline.get_region(r_idx - 1);
                     let r = benchline.get_region(r_idx);
                     let s = benchline.get_region(r_idx + 1);
-                    println!("right: {:?}, {:?}, {:?}", q, r, s);
                     events.push(Reverse(Event::Intersection(p, (q, r, s))));
+                    println!("ir intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
                 }
 
                 // 19. Mark p as a vertex and as an endpoint of Bqr*, Brs*, and Bqs*.
-                vertices.entry(q).or_default().push(p);
-                vertices.entry(r).or_default().push(p);
-                vertices.entry(s).or_default().push(p);
+                let p_unstar = circumcenter(q, r, s);
+                vertices.entry(q).or_default().push(p_unstar);
+                vertices.entry(r).or_default().push(p_unstar);
+                vertices.entry(s).or_default().push(p_unstar);
             }
         }
+        on_progress(&benchline, &events);
     }
-
-    on_progress(&benchline);
 
     // 20. end
     vertices
@@ -336,37 +413,58 @@ impl Bisector {
         }
     }
 
-    /// Return if point is on the left side or right side of the hyperbola, obtained by the
-    /// *-mapping of the bisector.
-    fn star_cmp(&self, point: Point) -> std::cmp::Ordering {
+    /// The y value of the line bisector at x.
+    fn y_at(&self, x: f32) -> f32 {
+        let x = x - self.a.pos.x;
         let dx = self.b.pos.x - self.a.pos.x;
         let dy = self.b.pos.y - self.a.pos.y;
 
-        if dy == 0.0 {
+        let dx2 = dx * dx;
+        let dy2 = dy * dy;
+
+        self.a.pos.y + (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy)
+        // 1 + (1 + 2*0.5 + 1) / (-2*1)
+        // 1 + (1 + 1 + 1) / -2 = 1 - 1.5 = -0.5
+    }
+
+    /// The y value of the hyperbola "bisector*" at x.
+    fn y_star_at(&self, x: f32) -> f32 {
+        let dx = self.b.pos.x - self.a.pos.x;
+        let dy = self.b.pos.y - self.a.pos.y;
+        let x = x - self.a.pos.x;
+
+        let x2 = x * x;
+        let dx2 = dx * dx;
+        let dy2 = dy * dy;
+
+        let sqrt = |x: f32| x.sqrt();
+
+        self.a.pos.y
+            + sqrt(x2 + (dx2 - 2.0 * dx * x + dy2).powi(2) / (4.0 * dy2))
+            + (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy)
+    }
+
+    /// Return if point is on the left side or right side of the hyperbola, obtained by the
+    /// *-mapping of the bisector.
+    fn star_cmp(&self, point: Point) -> std::cmp::Ordering {
+        if point.pos.x < self.min_x {
+            return std::cmp::Ordering::Less;
+        }
+        if point.pos.x >= self.max_x {
+            return std::cmp::Ordering::Greater;
+        }
+
+        if (self.b.pos.y - self.a.pos.y) == 0.0 {
             // the bisector is a vertical line segment
             return point.pos.x.partial_cmp(&self.a.pos.x).unwrap();
         }
 
-        // The y value of the hyperbola (bisector*) segment at x = point.x
-        let bisector_star_dy = {
-            let x = point.pos.x;
-
-            let x2 = x * x;
-            let dx2 = dx * dx;
-            let dy2 = dy * dy;
-
-            let sqrt = |x: f32| x.sqrt();
-
-            sqrt(x2 + (dx2 - 2.0 * dx * x + dy2).powi(2) / (4.0 * dy2))
-                + (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy)
-        };
-
-        let bisector_star_y = self.a.pos.y + bisector_star_dy;
+        let bisector_star_y = self.y_star_at(point.pos.x);
 
         let ord = point.pos.y.partial_cmp(&bisector_star_y).unwrap();
 
-        // if the point is on the right side of the vertex, above y means left side.
-        if point.pos.x > self.a.pos.x {
+        // if this is the right half of the hyperbola, above y means left side.
+        if self.min_x == self.a.pos.x {
             ord.reverse()
         } else {
             ord
@@ -462,186 +560,37 @@ fn start_map(p: Point, q: Point) -> Point {
     }
 }
 
-#[macroquad::main("Tree")]
-async fn main() {
-    let camera = Camera2D {
-        zoom: vec2(1., 1.),
-        target: vec2(0.0, 0.5),
-        ..Default::default()
-    };
+/// Finds the circumcenter of the triangle formed by the points `a`, `b`, and `c`.
+fn circumcenter(a: Point, b: Point, c: Point) -> Point {
+    let d = 2.0
+        * (a.pos.x * (b.pos.y - c.pos.y)
+            + b.pos.x * (c.pos.y - a.pos.y)
+            + c.pos.x * (a.pos.y - b.pos.y));
 
-    set_camera(&camera);
-    loop {
-        clear_background(LIGHTGRAY);
+    let ux = (a.pos.x * a.pos.x + a.pos.y * a.pos.y) * (b.pos.y - c.pos.y)
+        + (b.pos.x * b.pos.x + b.pos.y * b.pos.y) * (c.pos.y - a.pos.y)
+        + (c.pos.x * c.pos.x + c.pos.y * c.pos.y) * (a.pos.y - b.pos.y);
+    let uy = (a.pos.x * a.pos.x + a.pos.y * a.pos.y) * (c.pos.x - b.pos.x)
+        + (b.pos.x * b.pos.x + b.pos.y * b.pos.y) * (a.pos.x - c.pos.x)
+        + (c.pos.x * c.pos.x + c.pos.y * c.pos.y) * (b.pos.x - a.pos.x);
 
-        draw_circle(0., 0., 0.03, DARKGRAY);
-
-        next_frame().await
+    Point {
+        pos: vec2(ux / d, uy / d),
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use quickcheck::{Arbitrary, Gen};
+#[macroquad::main("Tree")]
+async fn main() {
+    let (send, recv) = std::sync::mpsc::sync_channel(0);
 
-    impl Arbitrary for Point {
-        fn arbitrary(g: &mut Gen) -> Self {
-            let mut gen = || loop {
-                let x = f32::arbitrary(g);
-                if x.is_finite() && x.abs() < 1.0e12 {
-                    return x;
-                }
-            };
+    let points = [
+        (4, 0), //
+        (0, 1),
+        (5, 2),
+        (5, 3),
+    ];
 
-            Point {
-                pos: vec2(gen(), gen()),
-            }
-        }
-    }
-
-    fn close(a: f32, b: f32) -> bool {
-        (a - b).abs() < (a + b).abs() * 1e-5
-    }
-
-    #[test]
-    fn bisector_intersection() {
-        let a = Point { pos: vec2(0., 0.) };
-        let b = Point { pos: vec2(1., 0.) };
-        let c = Point { pos: vec2(0., 1.) };
-        let d = Point { pos: vec2(1., 1.) };
-
-        let ad = super::Bisector::new(a, d);
-        let bc = super::Bisector::new(b, c);
-
-        let p = ad.intersection(bc).unwrap();
-
-        assert_eq!(p.pos, vec2(0.5, 0.5));
-    }
-
-    #[quickcheck]
-    fn bisector_intersections(a: Point, b: Point, c: Point, d: Point) -> bool {
-        let ab = super::Bisector::new(a, b);
-        let cd = super::Bisector::new(c, d);
-
-        println!("ab: {:?}, cd: {:?}", ab, cd);
-
-        let Some(p) = ab.intersection(cd) else {
-            return true;
-        };
-
-        println!("p: {:?}", p);
-
-        let da = dist(a, p);
-        let db = dist(b, p);
-        let dc = dist(c, p);
-        let dd = dist(d, p);
-
-        // Ignore NaN/Infinite results
-        if !da.is_finite() || !db.is_finite() || !dc.is_finite() || !dd.is_finite() {
-            return true;
-        }
-
-        println!("da: {}, db: {}, dc: {}, dd: {}", da, db, dc, dd);
-
-        close(da, db) && close(dc, dd)
-    }
-
-    #[test]
-    fn bisector_cmp() {
-        let p = Point { pos: vec2(1., 0.) };
-        let q = Point { pos: vec2(0., 1.) };
-        let r = Point { pos: vec2(1., 1.) };
-        let t = Point { pos: vec2(-1., 1.) };
-
-        let bpq = Bisector::new(p, q);
-
-        assert_eq!(bpq.star_cmp(r), std::cmp::Ordering::Greater);
-        assert_eq!(bpq.star_cmp(t), std::cmp::Ordering::Less);
-    }
-
-    #[test]
-    fn bisector_no_intersection() {
-        let p = Point { pos: vec2(1., 0.) };
-        let q = Point { pos: vec2(0., 1.) };
-        let r = Point { pos: vec2(1., 1.) };
-
-        let bpq = Bisector::new(p, q);
-        let bqr = Bisector::new(q, r);
-        let bpr = Bisector::new(p, r);
-
-        let cqr_plus = bqr.c_plus();
-        let cqr_minus = bqr.c_minus();
-
-        let cpq_minus = bpq.c_minus();
-        assert_eq!(cpq_minus.intersection(cqr_plus), None);
-        assert_eq!(cpq_minus.intersection(cqr_minus), None);
-
-        let cpr_plus = bpr.c_plus();
-        assert_eq!(cpq_minus.intersection(cpr_plus), None);
-        assert_eq!(cqr_plus.intersection(cpr_plus), None);
-    }
-
-    #[test]
-    fn diagram() {
-        let p = Point { pos: vec2(1., 0.) };
-        let q = Point { pos: vec2(0., 1.) };
-        let r = Point { pos: vec2(1., 1.) };
-        let points = [p, q, r];
-
-        let mut expected_benchline: &[&[Point]] = &[
-            &[p],             // first region
-            &[p, q, p],       // insert q
-            &[p, q, p, r, p], // insert r
-            &[p, q, r, p],    // intersect q and r
-        ];
-
-        let vertexes = fortune_algorithm(&points, &mut |benchline| {
-            let regions = benchline.get_regions().collect::<Vec<_>>();
-            println!("regions: {:?}", regions);
-            assert_eq!(regions, expected_benchline[0]);
-            expected_benchline = &expected_benchline[1..];
-        });
-
-        for (site, vertexes) in vertexes {
-            println!("site: {:?}", site);
-            for vertex in &vertexes {
-                println!("  vertex: {:?}", vertex);
-            }
-
-            let dists: Vec<f32> = vertexes.iter().map(|v| dist(site, *v)).collect();
-
-            assert!(dists.iter().all(|d| *d > 0.0));
-
-            // all dists should be the same
-            assert!(dists.windows(2).all(|w| close(w[0], w[1])));
-        }
-    }
-
-    #[quickcheck]
-    fn diagram_fuzz(mut points: Vec<(u8, u8)>) {
-        points.sort();
-        points.dedup();
-
-        let points = points
-            .into_iter()
-            .map(|(x, y)| Point {
-                pos: vec2(x as f32, y as f32),
-            })
-            .collect::<Vec<_>>();
-
-        fortune_algorithm(&points, &mut |_| {});
-    }
-
-    #[test]
-    fn diagram1() {
-        let points = [
-            (4, 0), //
-            (0, 1),
-            (5, 2),
-            (5, 3),
-        ];
-
+    let mut _thread = Some(std::thread::spawn(move || {
         let points = points
             .iter()
             .map(|(x, y)| Point {
@@ -649,9 +598,119 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        fortune_algorithm(&points, &mut |benchline| {
-            let regions = benchline.get_regions().collect::<Vec<_>>();
-            println!("regions: {:?}", regions);
-        });
+        fortune_algorithm(&points, &mut |benchline, events| {
+            send.send((benchline.clone(), events.clone())).unwrap();
+        })
+    }));
+
+    let width = points.iter().map(|(x, _)| *x).max().unwrap() as f32;
+    let height = points.iter().map(|(_, y)| *y).max().unwrap() as f32;
+
+    let max = width.max(height);
+    let width = max;
+    let height = max;
+
+    let camera = Camera2D {
+        zoom: vec2(1.0 / width, -1.0 / height),
+        target: vec2(width / 2.0, height / 2.0),
+        ..Default::default()
+    };
+
+    let (mut benchline, mut events) = recv.recv().unwrap();
+
+    set_camera(&camera);
+
+    let bottom_left = camera.screen_to_world(vec2(0.0, 0.0));
+    let top_right = camera.screen_to_world(vec2(screen_width(), screen_height()));
+    let left = bottom_left.x;
+    let right = top_right.x;
+    let top = bottom_left.y;
+    let bottom = top_right.y;
+
+    let mut vertexes = None;
+
+    loop {
+        clear_background(LIGHTGRAY);
+
+        for point in points {
+            draw_circle(point.0 as f32, point.1 as f32, 0.1, RED);
+        }
+
+        if is_key_pressed(KeyCode::Space) {
+            if let Ok(b) = recv.try_recv() {
+                (benchline, events) = b;
+            }
+
+            if _thread.as_ref().is_some_and(|x| x.is_finished()) {
+                vertexes = Some(_thread.take().unwrap().join().unwrap());
+            }
+        }
+
+        if let Some(vertexes) = &vertexes {
+            for (p, vs) in vertexes {
+                draw_circle(p.pos.x, p.pos.y, 0.1, RED);
+                for v in vs {
+                    draw_circle(v.pos.x, v.pos.y, 0.05, RED);
+                }
+            }
+        }
+
+        let mut hyperbola_colors = [GREEN, GREEN];
+        for (p, b) in benchline.regions.iter() {
+            hyperbola_colors.swap(0, 1);
+            let hcolor = hyperbola_colors[0];
+
+            draw_circle(p.pos.x, p.pos.y, 0.1, BLUE);
+
+            let step = (right - left) / 100.0;
+
+            let y0 = b.y_at(left);
+            let y1 = b.y_at(right);
+
+            draw_line(left, y0, right, y1, 0.02, BLUE);
+            // draw_line(b.a.pos.x, b.a.pos.y, b.b.pos.x, b.b.pos.y, 0.02, BLUE);
+
+            for i in 0..100 {
+                let mut x1 = left + i as f32 * step;
+                let mut x2 = left + (i + 1) as f32 * step;
+
+                if x2 < b.min_x {
+                    continue;
+                }
+                if x1 < b.min_x {
+                    x1 = b.min_x;
+                }
+                if x1 > b.max_x {
+                    continue;
+                }
+                if x2 > b.max_x {
+                    x2 = b.max_x;
+                }
+
+                let y1 = b.y_star_at(x1);
+                let y2 = b.y_star_at(x2);
+                if !y1.is_finite() || !y2.is_finite() {
+                    continue;
+                }
+                if (y1 > top || y1 < bottom) && (y2 > top || y2 < bottom) {
+                    continue;
+                }
+                draw_line(x1, y1, x2, y2, 0.03, hcolor);
+            }
+        }
+
+        for Reverse(v) in events.iter() {
+            match v {
+                Event::Site(p) => {
+                    draw_circle(p.pos.x, p.pos.y, 0.05, BLACK);
+                }
+                Event::Intersection(p, _) => {
+                    draw_circle(p.pos.x, p.pos.y, 0.05, BLACK);
+                    draw_line(p.pos.x, bottom, p.pos.x, top, 0.02, BLACK);
+                }
+            }
+        }
+
+        next_frame().await
     }
 }
