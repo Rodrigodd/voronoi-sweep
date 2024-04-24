@@ -2,10 +2,10 @@
 #[macro_use(quickcheck)]
 extern crate quickcheck_macros;
 
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
-
 use macroquad::prelude::*;
+
+mod heap;
+use heap::Heap;
 
 #[cfg(test)]
 mod test;
@@ -56,12 +56,14 @@ impl Ord for Point {
     }
 }
 
+type SiteIdx = u32;
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum Event {
     /// A site.
-    Site(Point),
-    /// (p, (q, r, s)), where p is a intersection between Cqr and Crs.
-    Intersection(Point, (Point, Point, Point)),
+    Site(SiteIdx),
+    /// (p, (q, r, s)), where p is the intersection point of Cqr* and Crs*.
+    Intersection(Point, (SiteIdx, SiteIdx, SiteIdx)),
 }
 
 /// A benchline is a interleaved sequence of regions and boundaries.
@@ -75,31 +77,31 @@ pub struct Benchline {
     /// Note that the last element of the benchline is always a region, but I can't represent that
     /// cleanly in Rust type system. This will be handled by ignoring the last boundary in the
     /// Vec.
-    regions: Vec<(Point, Bisector)>,
+    regions: Vec<(SiteIdx, Bisector)>,
 }
 impl Benchline {
-    fn new(first_region: Point) -> Self {
+    fn new(first_region: SiteIdx) -> Self {
         Self {
             regions: vec![(first_region, Bisector::nill())],
         }
     }
 
-    pub fn get_regions(&self) -> impl Iterator<Item = Point> + '_ {
+    pub fn get_regions(&self) -> impl Iterator<Item = SiteIdx> + '_ {
         self.regions.iter().map(|(p, _)| *p)
     }
 
     /// Find the region that contains the point.
     ///
     /// The regions fills the entire space, so there is always a region that contains the point.
-    fn find_region(&self, p: Point) -> usize {
+    fn find_region(&self, sites: &[Point], p: Point) -> usize {
         // debug print
         // println!("find_region for {:?}", p);
         // for (r, b) in self.regions.iter() {
         //     println!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
         // }
 
-        for (i, (r, b)) in self.regions[..self.regions.len() - 1].iter().enumerate() {
-            if b.star_cmp(p) == std::cmp::Ordering::Less {
+        for (i, (_, b)) in self.regions[..self.regions.len() - 1].iter().enumerate() {
+            if b.star_cmp(sites, p) == std::cmp::Ordering::Less {
                 return i;
             }
         }
@@ -108,7 +110,7 @@ impl Benchline {
     }
 
     /// Find the index of region `r`, whose neighbors are `q` and `s`.
-    fn find_region3(&self, q: Point, r: Point, s: Point) -> usize {
+    fn find_region3(&self, q: SiteIdx, r: SiteIdx, s: SiteIdx) -> usize {
         // println!("find_region3 {:?} {:?} {:?}", q, r, s);
         // for (r, b) in self.regions.iter() {
         //     println!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
@@ -124,7 +126,7 @@ impl Benchline {
     }
 
     /// Insert a new region within the region at the given index.
-    fn insert(&mut self, region_idx: usize, region: (Bisector, Point, Bisector)) {
+    fn insert(&mut self, region_idx: usize, region: (Bisector, SiteIdx, Bisector)) {
         let (p, h) = self.regions[region_idx];
 
         let (hl, q, hr) = region;
@@ -140,7 +142,7 @@ impl Benchline {
     }
 
     /// Return the region at the given index.
-    fn get_region(&self, q_idx: usize) -> Point {
+    fn get_region(&self, q_idx: usize) -> SiteIdx {
         self.regions[q_idx].0
     }
 
@@ -170,8 +172,8 @@ impl Benchline {
 /// - S.J. Fortune, A sweepline algorithm for Voronoi diagrams, Algorithmica 2 (1987) 153–174.
 pub fn fortune_algorithm(
     sites: &[Point],
-    on_progress: &mut impl FnMut(&Benchline, &BinaryHeap<Reverse<Event>>),
-) -> HashMap<Point, Vec<Point>> {
+    on_progress: &mut impl FnMut(&Benchline, &[Event]),
+) -> Vec<Vec<Point>> {
     // Algorithm 1: Computation of V*(S).
     // Input:
     //  - S is a set of n >= 1 points with unique bottommost point.
@@ -185,42 +187,50 @@ pub fn fortune_algorithm(
     //  - L: a sequence (r1, c1, r2, . . . , rk) of regions (labeled by site) and boundaries
     //  (labeled by a pair of sites). Note that a region can appear many times on L.
 
-    let mut vertices = sites
-        .iter()
-        .map(|site| (*site, Vec::new()))
-        .collect::<HashMap<_, _>>();
+    let mut vertices = vec![Vec::new(); sites.len()];
 
     // 1. initialize Q with all sites
-    let mut events = BinaryHeap::from_iter(sites.iter().map(|site| Reverse(Event::Site(*site))));
+    let mut events = Heap::new(|a: &Event, b: &Event| {
+        let pa = match a {
+            Event::Site(p) => sites[*p as usize],
+            Event::Intersection(p, _) => *p,
+        };
+        let pb = match b {
+            Event::Site(p) => sites[*p as usize],
+            Event::Intersection(p, _) => *p,
+        };
+        pa.cmp(&pb)
+    });
 
     // 2. p <- extract_min(Q)
-    let Some(Reverse(Event::Site(p))) = events.pop() else {
+    let Some(Event::Site(p)) = events.pop() else {
         return vertices;
     };
 
     // 3. L <- the list containing Rp.
     let mut benchline = Benchline::new(p);
 
-    on_progress(&benchline, &events);
+    on_progress(&benchline, events.as_slice());
 
     // 4. while Q is not empty begin
     // 5. p <- extract min(Q)
-    while let Some(Reverse(event)) = events.pop() {
+    while let Some(event) = events.pop() {
         println!("event {:?} of {:?}", event, events);
         // 6. case
         match event {
             // 7. p is a site:
-            Event::Site(p) => {
+            Event::Site(p_idx) => {
+                let p = sites[p_idx as usize];
                 // 8. Find an occurrence of a region Rq* on L containing p.
-                let q_idx = benchline.find_region(p);
-                let q = benchline.get_region(q_idx);
+                let reg_q_idx = benchline.find_region(sites, p);
+                let q_idx = benchline.get_region(reg_q_idx);
 
                 // 9. Create bisector Bpq*.
-                let bpq = Bisector::new(p, q);
+                let bpq = Bisector::new(p_idx, q_idx);
 
                 // 10. Update list L so that it contains ..., Rq*, Cpq-, Rp*, Cpq+, Rq*, ... in
                 //     place of Rq*.
-                benchline.insert(q_idx, (bpq.c_minus(), p, bpq.c_plus()));
+                benchline.insert(reg_q_idx, (bpq.c_minus(sites), p_idx, bpq.c_plus(sites)));
 
                 // 11. Delete from Q the intersection between the left and right boundary of Rq*,
                 //     if any.
@@ -229,62 +239,66 @@ pub fn fortune_algorithm(
                 //     L, if any, and the intersection between Cpq+, and its neighbor to the right,
                 //     if any.
                 'left: {
-                    let Some(left_neighbor) = benchline.get_left_boundary(q_idx) else {
+                    let Some(left_neighbor) = benchline.get_left_boundary(reg_q_idx) else {
                         break 'left;
                     };
-                    let Some(p) = bpq.c_minus().star_intersection(left_neighbor) else {
+                    let Some(p) = bpq.c_minus(sites).star_intersection(sites, left_neighbor) else {
                         break 'left;
                     };
 
-                    let q = benchline.get_region(q_idx - 1);
-                    let r = benchline.get_region(q_idx);
-                    let s = benchline.get_region(q_idx + 1);
-                    events.push(Reverse(Event::Intersection(p, (q, r, s))));
+                    let q = benchline.get_region(reg_q_idx - 1);
+                    let r = benchline.get_region(reg_q_idx);
+                    let s = benchline.get_region(reg_q_idx + 1);
+                    events.push(Event::Intersection(p, (q, r, s)));
                     println!("l intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
                 }
 
                 'right: {
-                    let Some(right_neighbor) = benchline.get_righ_boundary(q_idx + 2) else {
+                    let Some(right_neighbor) = benchline.get_righ_boundary(reg_q_idx + 2) else {
                         break 'right;
                     };
-                    let Some(p) = bpq.c_plus().star_intersection(right_neighbor) else {
+                    let Some(p) = bpq.c_plus(sites).star_intersection(sites, right_neighbor) else {
                         break 'right;
                     };
 
-                    let q = benchline.get_region(q_idx + 1);
-                    let r = benchline.get_region(q_idx + 2);
-                    let s = benchline.get_region(q_idx + 3);
-                    events.push(Reverse(Event::Intersection(p, (q, r, s))));
+                    let q = benchline.get_region(reg_q_idx + 1);
+                    let r = benchline.get_region(reg_q_idx + 2);
+                    let s = benchline.get_region(reg_q_idx + 3);
+                    events.push(Event::Intersection(p, (q, r, s)));
                     println!("r intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
                 }
             }
             // 13. p is an intersection:
-            Event::Intersection(p, (q, r, s)) => {
+            Event::Intersection(p, (q_idx, r_idx, s_idx)) => {
+                let q = sites[q_idx as usize];
+                let r = sites[r_idx as usize];
+                let s = sites[s_idx as usize];
+
                 // 14. Let p be the intersection of boundaries Cqr and Crs.
 
                 // 15. Create the bisector Bqs*.
-                let bqs = Bisector::new(q, s);
+                let bqs = Bisector::new(q_idx, s_idx);
 
                 // 16. Update list L so it contains Cqs = Cqs- or Cqs+,as appropriate, instead of Cqr, R*r, Crs.
-                let r_idx = benchline.find_region3(q, r, s);
+                let region_r_idx = benchline.find_region3(q_idx, r_idx, s_idx);
                 let cqs = if p.pos.x < r.pos.x {
-                    bqs.c_minus()
+                    bqs.c_minus(sites)
                 } else {
-                    bqs.c_plus()
+                    bqs.c_plus(sites)
                 };
 
-                let cqr = benchline.get_left_boundary(r_idx).unwrap();
-                let crs = benchline.get_righ_boundary(r_idx).unwrap();
+                let cqr = benchline.get_left_boundary(region_r_idx).unwrap();
+                let crs = benchline.get_righ_boundary(region_r_idx).unwrap();
 
-                benchline.remove(r_idx, cqs);
+                benchline.remove(region_r_idx, cqs);
 
                 // 17. Delete from Q any intersection between Cqr and its neighbor to the left and between Crs and its neighbor to the right.
                 'left: {
-                    let Some(left_neighbor) = benchline.get_left_boundary(r_idx - 1) else {
+                    let Some(left_neighbor) = benchline.get_left_boundary(region_r_idx - 1) else {
                         break 'left;
                     };
 
-                    events.retain(|Reverse(e)| match e {
+                    events.remove(|e| match e {
                         &Event::Intersection(_, (a, b, c)) => {
                             let retain = !((a == left_neighbor.a || a == left_neighbor.b)
                                 && (b == cqr.a || b == cqr.b)
@@ -301,11 +315,11 @@ pub fn fortune_algorithm(
                 }
 
                 'right: {
-                    let Some(right_neighbor) = benchline.get_righ_boundary(r_idx) else {
+                    let Some(right_neighbor) = benchline.get_righ_boundary(region_r_idx) else {
                         break 'right;
                     };
 
-                    events.retain(|Reverse(e)| match e {
+                    events.remove(|e| match e {
                         &Event::Intersection(_, (a, b, c)) => {
                             let retain = !((a == crs.a || a == crs.b)
                                 && (b == crs.a || b == crs.b)
@@ -323,43 +337,43 @@ pub fn fortune_algorithm(
 
                 // 18. Insert any intersections between Cqs and its neighbors to the left or right into Q.
                 'left: {
-                    let Some(left_neighbor) = benchline.get_left_boundary(r_idx - 1) else {
+                    let Some(left_neighbor) = benchline.get_left_boundary(region_r_idx - 1) else {
                         break 'left;
                     };
-                    let Some(p) = cqs.star_intersection(left_neighbor) else {
+                    let Some(p) = cqs.star_intersection(sites, left_neighbor) else {
                         break 'left;
                     };
 
-                    let q = benchline.get_region(r_idx - 2);
-                    let r = benchline.get_region(r_idx - 1);
-                    let s = benchline.get_region(r_idx);
-                    events.push(Reverse(Event::Intersection(p, (q, r, s))));
+                    let q = benchline.get_region(region_r_idx - 2);
+                    let r = benchline.get_region(region_r_idx - 1);
+                    let s = benchline.get_region(region_r_idx);
+                    events.push(Event::Intersection(p, (q, r, s)));
                     println!("il intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
                 }
 
                 'right: {
-                    let Some(right_neighbor) = benchline.get_righ_boundary(r_idx) else {
+                    let Some(right_neighbor) = benchline.get_righ_boundary(region_r_idx) else {
                         break 'right;
                     };
-                    let Some(p) = cqs.star_intersection(right_neighbor) else {
+                    let Some(p) = cqs.star_intersection(sites, right_neighbor) else {
                         break 'right;
                     };
 
-                    let q = benchline.get_region(r_idx - 1);
-                    let r = benchline.get_region(r_idx);
-                    let s = benchline.get_region(r_idx + 1);
-                    events.push(Reverse(Event::Intersection(p, (q, r, s))));
+                    let q = benchline.get_region(region_r_idx - 1);
+                    let r = benchline.get_region(region_r_idx);
+                    let s = benchline.get_region(region_r_idx + 1);
+                    events.push(Event::Intersection(p, (q, r, s)));
                     println!("ir intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
                 }
 
                 // 19. Mark p as a vertex and as an endpoint of Bqr*, Brs*, and Bqs*.
                 let p_unstar = circumcenter(q, r, s);
-                vertices.entry(q).or_default().push(p_unstar);
-                vertices.entry(r).or_default().push(p_unstar);
-                vertices.entry(s).or_default().push(p_unstar);
+                vertices[q_idx as usize].push(p_unstar);
+                vertices[r_idx as usize].push(p_unstar);
+                vertices[s_idx as usize].push(p_unstar);
             }
         }
-        on_progress(&benchline, &events);
+        on_progress(&benchline, events.as_slice());
     }
 
     // 20. end
@@ -370,9 +384,9 @@ pub fn fortune_algorithm(
 #[derive(Clone, Copy, Debug)]
 struct Bisector {
     /// The higher point, the minimun point of the hyperbola "bisector*".
-    a: Point,
+    a: SiteIdx,
     /// The lower point.
-    b: Point,
+    b: SiteIdx,
     /// The x value of the leftmost point of the hyperbola segment.
     min_x: f32,
     /// The x value of the rightmost point of the hyperbola segment.
@@ -381,14 +395,14 @@ struct Bisector {
 impl Bisector {
     fn nill() -> Self {
         Self {
-            a: Point { pos: Vec2::ZERO },
-            b: Point { pos: Vec2::ZERO },
+            a: SiteIdx::MAX,
+            b: SiteIdx::MAX,
             min_x: 0.,
             max_x: 0.,
         }
     }
 
-    fn new(mut a: Point, mut b: Point) -> Self {
+    fn new(mut a: SiteIdx, mut b: SiteIdx) -> Self {
         if a < b {
             std::mem::swap(&mut a, &mut b);
         }
@@ -400,38 +414,44 @@ impl Bisector {
         }
     }
 
-    fn c_minus(self) -> Bisector {
+    fn c_minus(self, sites: &[Point]) -> Bisector {
+        let a = sites[self.a as usize];
         Bisector {
-            max_x: self.a.pos.x,
+            max_x: a.pos.x,
             ..self
         }
     }
-    fn c_plus(self) -> Bisector {
+    fn c_plus(self, sites: &[Point]) -> Bisector {
+        let a = sites[self.a as usize];
         Bisector {
-            min_x: self.a.pos.x,
+            min_x: a.pos.x,
             ..self
         }
     }
 
     /// The y value of the line bisector at x.
-    fn y_at(&self, x: f32) -> f32 {
-        let x = x - self.a.pos.x;
-        let dx = self.b.pos.x - self.a.pos.x;
-        let dy = self.b.pos.y - self.a.pos.y;
+    fn y_at(&self, sites: &[Point], x: f32) -> f32 {
+        let (a, b) = self.ab(sites);
+
+        let x = x - a.pos.x;
+        let dx = b.pos.x - a.pos.x;
+        let dy = b.pos.y - a.pos.y;
 
         let dx2 = dx * dx;
         let dy2 = dy * dy;
 
-        self.a.pos.y + (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy)
+        a.pos.y + (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy)
         // 1 + (1 + 2*0.5 + 1) / (-2*1)
         // 1 + (1 + 1 + 1) / -2 = 1 - 1.5 = -0.5
     }
 
     /// The y value of the hyperbola "bisector*" at x.
-    fn y_star_at(&self, x: f32) -> f32 {
-        let dx = self.b.pos.x - self.a.pos.x;
-        let dy = self.b.pos.y - self.a.pos.y;
-        let x = x - self.a.pos.x;
+    fn y_star_at(&self, sites: &[Point], x: f32) -> f32 {
+        let (a, b) = self.ab(sites);
+
+        let dx = b.pos.x - a.pos.x;
+        let dy = b.pos.y - a.pos.y;
+        let x = x - a.pos.x;
 
         let x2 = x * x;
         let dx2 = dx * dx;
@@ -439,14 +459,16 @@ impl Bisector {
 
         let sqrt = |x: f32| x.sqrt();
 
-        self.a.pos.y
+        a.pos.y
             + sqrt(x2 + (dx2 - 2.0 * dx * x + dy2).powi(2) / (4.0 * dy2))
             + (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy)
     }
 
     /// Return if point is on the left side or right side of the hyperbola, obtained by the
     /// *-mapping of the bisector.
-    fn star_cmp(&self, point: Point) -> std::cmp::Ordering {
+    fn star_cmp(&self, sites: &[Point], point: Point) -> std::cmp::Ordering {
+        let (a, b) = self.ab(sites);
+
         if point.pos.x < self.min_x {
             return std::cmp::Ordering::Less;
         }
@@ -454,17 +476,17 @@ impl Bisector {
             return std::cmp::Ordering::Greater;
         }
 
-        if (self.b.pos.y - self.a.pos.y) == 0.0 {
+        if (b.pos.y - a.pos.y) == 0.0 {
             // the bisector is a vertical line segment
-            return point.pos.x.partial_cmp(&self.a.pos.x).unwrap();
+            return point.pos.x.partial_cmp(&a.pos.x).unwrap();
         }
 
-        let bisector_star_y = self.y_star_at(point.pos.x);
+        let bisector_star_y = self.y_star_at(sites, point.pos.x);
 
         let ord = point.pos.y.partial_cmp(&bisector_star_y).unwrap();
 
         // if this is the right half of the hyperbola, above y means left side.
-        if self.min_x == self.a.pos.x {
+        if self.min_x == a.pos.x {
             ord.reverse()
         } else {
             ord
@@ -472,20 +494,23 @@ impl Bisector {
     }
 
     /// Returns the intersection point of two bisectors.
-    fn intersection(&self, other: Bisector) -> Option<Point> {
+    fn intersection(&self, sites: &[Point], other: Bisector) -> Option<Point> {
+        let (a, b) = self.ab(sites);
+        let (oa, ob) = other.ab(sites);
+
         if self.min_x > other.max_x || self.max_x < other.min_x {
             return None;
         }
 
-        let px = self.a.pos.x;
-        let py = self.a.pos.y;
-        let qx = self.b.pos.x;
-        let qy = self.b.pos.y;
+        let px = a.pos.x;
+        let py = a.pos.y;
+        let qx = b.pos.x;
+        let qy = b.pos.y;
 
-        let rx = other.a.pos.x;
-        let ry = other.a.pos.y;
-        let sx = other.b.pos.x;
-        let sy = other.b.pos.y;
+        let rx = oa.pos.x;
+        let ry = oa.pos.y;
+        let sx = ob.pos.x;
+        let sy = ob.pos.y;
 
         let px2 = px * px;
         let py2 = py * py;
@@ -538,8 +563,13 @@ impl Bisector {
     }
 
     /// Returns the intersection point of two bisectors, *-mapped.
-    fn star_intersection(&self, other: Bisector) -> Option<Point> {
-        self.intersection(other).map(|p| start_map(p, self.a))
+    fn star_intersection(&self, sites: &[Point], other: Bisector) -> Option<Point> {
+        let (a, _) = self.ab(sites);
+        self.intersection(sites, other).map(|p| start_map(p, a))
+    }
+
+    fn ab(&self, sites: &[Point]) -> (Point, Point) {
+        (sites[self.a as usize], sites[self.b as usize])
     }
 }
 
@@ -590,17 +620,20 @@ async fn main() {
         (5, 3),
     ];
 
-    let mut _thread = Some(std::thread::spawn(move || {
-        let points = points
-            .iter()
-            .map(|(x, y)| Point {
-                pos: vec2(*x as f32, *y as f32),
-            })
-            .collect::<Vec<_>>();
-
-        fortune_algorithm(&points, &mut |benchline, events| {
-            send.send((benchline.clone(), events.clone())).unwrap();
+    let sites = &points
+        .iter()
+        .map(|(x, y)| Point {
+            pos: vec2(*x as f32, *y as f32),
         })
+        .collect::<Vec<_>>();
+
+    let mut _thread = Some(std::thread::spawn({
+        let sites = sites.clone();
+        move || {
+            fortune_algorithm(&sites, &mut |benchline, events| {
+                send.send((benchline.clone(), events.to_vec())).unwrap();
+            })
+        }
     }));
 
     let width = points.iter().map(|(x, _)| *x).max().unwrap() as f32;
@@ -647,8 +680,7 @@ async fn main() {
         }
 
         if let Some(vertexes) = &vertexes {
-            for (p, vs) in vertexes {
-                draw_circle(p.pos.x, p.pos.y, 0.1, RED);
+            for vs in vertexes {
                 for v in vs {
                     draw_circle(v.pos.x, v.pos.y, 0.05, RED);
                 }
@@ -657,6 +689,8 @@ async fn main() {
 
         let mut hyperbola_colors = [GREEN, GREEN];
         for (p, b) in benchline.regions.iter() {
+            let p = sites[*p as usize];
+
             hyperbola_colors.swap(0, 1);
             let hcolor = hyperbola_colors[0];
 
@@ -664,8 +698,8 @@ async fn main() {
 
             let step = (right - left) / 100.0;
 
-            let y0 = b.y_at(left);
-            let y1 = b.y_at(right);
+            let y0 = b.y_at(sites, left);
+            let y1 = b.y_at(sites, right);
 
             draw_line(left, y0, right, y1, 0.02, BLUE);
             // draw_line(b.a.pos.x, b.a.pos.y, b.b.pos.x, b.b.pos.y, 0.02, BLUE);
@@ -687,8 +721,8 @@ async fn main() {
                     x2 = b.max_x;
                 }
 
-                let y1 = b.y_star_at(x1);
-                let y2 = b.y_star_at(x2);
+                let y1 = b.y_star_at(sites, x1);
+                let y2 = b.y_star_at(sites, x2);
                 if !y1.is_finite() || !y2.is_finite() {
                     continue;
                 }
@@ -699,9 +733,10 @@ async fn main() {
             }
         }
 
-        for Reverse(v) in events.iter() {
+        for v in events.iter() {
             match v {
                 Event::Site(p) => {
+                    let p = &sites[*p as usize];
                     draw_circle(p.pos.x, p.pos.y, 0.05, BLACK);
                 }
                 Event::Intersection(p, _) => {
