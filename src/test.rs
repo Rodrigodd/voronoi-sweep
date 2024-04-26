@@ -286,6 +286,17 @@ fn y_star_at() {
 
 #[quickcheck]
 fn test_circumcenter(a: (u8, u8), b: (u8, u8), c: (u8, u8)) {
+    // check if points are collinear
+    {
+        let (ax, ay) = (a.0 as i32, a.1 as i32);
+        let (bx, by) = (b.0 as i32, b.1 as i32);
+        let (cx, cy) = (c.0 as i32, c.1 as i32);
+
+        if (by - ay) * (cx - bx) == (cy - by) * (bx - ax) {
+            return;
+        }
+    }
+
     let a = Point {
         pos: vec2(a.0 as f32, a.1 as f32),
     };
