@@ -2,6 +2,8 @@
 #[macro_use(quickcheck)]
 extern crate quickcheck_macros;
 
+use std::f32::consts::TAU;
+
 use macroquad::prelude::*;
 
 mod heap;
@@ -14,6 +16,17 @@ mod test;
 #[derive(PartialEq, Clone, Copy)]
 pub struct Point {
     pos: Vec2,
+}
+impl Point {
+    /// A Point whose x and y are both NaN.
+    const NAN: Self = Self {
+        pos: vec2(f32::NAN, f32::NAN),
+    };
+
+    /// Check if both coordinates are NaN.
+    fn is_nan(&self) -> bool {
+        self.pos.x.is_nan() && self.pos.y.is_nan()
+    }
 }
 impl std::fmt::Debug for Point {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -88,6 +101,12 @@ impl Benchline {
 
     pub fn get_regions(&self) -> impl Iterator<Item = SiteIdx> + '_ {
         self.regions.iter().map(|(p, _)| *p)
+    }
+
+    pub fn get_bisectors(&self) -> impl Iterator<Item = Bisector> + '_ {
+        self.regions[..self.regions.len() - 1]
+            .iter()
+            .map(|(_, b)| *b)
     }
 
     /// Find the region that contains the point.
@@ -173,7 +192,7 @@ impl Benchline {
 pub fn fortune_algorithm(
     sites: &[Point],
     on_progress: &mut impl FnMut(&Benchline, &[Event]),
-) -> Vec<Vec<Point>> {
+) -> Vec<Cell> {
     // Algorithm 1: Computation of V*(S).
     // Input:
     //  - S is a set of n >= 1 points with unique bottommost point.
@@ -187,7 +206,7 @@ pub fn fortune_algorithm(
     //  - L: a sequence (r1, c1, r2, . . . , rk) of regions (labeled by site) and boundaries
     //  (labeled by a pair of sites). Note that a region can appear many times on L.
 
-    let mut vertices = vec![Vec::new(); sites.len()];
+    let mut vertices = vec![Cell::new(); sites.len()];
 
     // 1. initialize Q with all sites
     let mut events = Heap::new(|a: &Event, b: &Event| {
@@ -201,6 +220,10 @@ pub fn fortune_algorithm(
         };
         pa.cmp(&pb)
     });
+
+    for site in 0..sites.len() {
+        events.push(Event::Site(site as SiteIdx));
+    }
 
     // 2. p <- extract_min(Q)
     let Some(Event::Site(p)) = events.pop() else {
@@ -368,9 +391,9 @@ pub fn fortune_algorithm(
 
                 // 19. Mark p as a vertex and as an endpoint of Bqr*, Brs*, and Bqs*.
                 let p_unstar = circumcenter(q, r, s);
-                vertices[q_idx as usize].push(p_unstar);
-                vertices[r_idx as usize].push(p_unstar);
-                vertices[s_idx as usize].push(p_unstar);
+                vertices[q_idx as usize].add_point(sites, p_unstar, q_idx, r_idx, s_idx);
+                vertices[r_idx as usize].add_point(sites, p_unstar, r_idx, q_idx, s_idx);
+                vertices[s_idx as usize].add_point(sites, p_unstar, s_idx, q_idx, r_idx);
             }
         }
         on_progress(&benchline, events.as_slice());
@@ -380,9 +403,105 @@ pub fn fortune_algorithm(
     vertices
 }
 
+/// Angle of this vector in relation to the x-axis, in the range [0, τ).
+fn angle(a: Vec2) -> f32 {
+    let x = a.y.atan2(a.x);
+    if x < 0.0 {
+        x + TAU
+    } else {
+        x
+    }
+}
+
+// A cell of the voronoi diagram. Contains a list of neighbors and points.
+//
+// The mediatriz of this site with the neighbors define the edges of the voronoi cell. The points
+// are where the edges intersect. If two neighbor mediatrizes don't intersect, its corresponding
+// intersection point will be Point::NAN.
+#[derive(Clone, Debug)]
+pub struct Cell {
+    /// Neighbors, sorted by they positive angle in relation to the x-axis, with x->y orientation.
+    pub neighbors: Vec<SiteIdx>,
+    /// The points where the edges of the cell intersect.
+    ///
+    /// The first point is the intersection of the mediatriz of the first neighbor with the second
+    /// neighbor, and so on.
+    pub points: Vec<Point>,
+}
+impl Cell {
+    fn new() -> Self {
+        Cell {
+            neighbors: Vec::new(),
+            points: Vec::new(),
+        }
+    }
+
+    /// Add neighbor. Return the index where the neighbor was inserted.
+    fn add_neighbor(&mut self, sites: &[Point], this: SiteIdx, neighbor: SiteIdx) -> usize {
+        let t = sites[this as usize];
+        for i in 0..self.neighbors.len() {
+            let a = sites[neighbor as usize];
+            let b = sites[self.neighbors[i] as usize];
+
+            if a == b {
+                println!("{}: already has neighbor {:?}", this, neighbor);
+                return i;
+            }
+
+            let angle_a = angle(a.pos - t.pos);
+            let angle_b = angle(b.pos - t.pos);
+
+            if angle_a < angle_b {
+                self.neighbors.insert(i, neighbor);
+                self.points.insert(i, Point::NAN);
+                return i;
+            }
+        }
+
+        self.neighbors.push(neighbor);
+        self.points.push(Point::NAN);
+        self.neighbors.len() - 1
+    }
+
+    /// Add the intersection point of the two bisectors with the two given neighbors.
+    ///
+    /// The point is inserted in the correct position in the list of points, and a placeholder is
+    /// added if necessary to keep the constraint `points.len == neighbors.len-1`.
+    fn add_point(
+        &mut self,
+        sites: &[Point],
+        point: Point,
+        this_idx: SiteIdx,
+        mut a_idx: SiteIdx,
+        mut b_idx: SiteIdx,
+    ) {
+        println!(
+            "{}: adding {:?} {:?} to {:?}: {:?}",
+            this_idx, a_idx, b_idx, self.neighbors, point
+        );
+
+        // PERF: a and b should be consecutive neighbors, so after we find one we could insert the
+        // other with a single extra comparison.
+
+        let t = sites[this_idx as usize].pos;
+        let va = sites[a_idx as usize].pos - t;
+        let vb = sites[b_idx as usize].pos - t;
+
+        if (angle(vb) - angle(va) + TAU) % TAU > TAU * 0.5 {
+            std::mem::swap(&mut a_idx, &mut b_idx);
+        }
+
+        self.add_neighbor(sites, this_idx, b_idx);
+        let a_idx = self.add_neighbor(sites, this_idx, a_idx);
+
+        debug_assert!(self.points[a_idx].is_nan());
+        self.points[a_idx] = point;
+    }
+}
+
 /// A segment of the bisector of two sites.
 #[derive(Clone, Copy, Debug)]
-struct Bisector {
+pub struct Bisector {
     /// The higher point, the minimun point of the hyperbola "bisector*".
     a: SiteIdx,
     /// The lower point.
@@ -609,8 +728,76 @@ fn circumcenter(a: Point, b: Point, c: Point) -> Point {
     }
 }
 
+async fn draw_diagram(view: Rect, cells: &[Cell], sites: &[Point]) {
+    let left = view.left();
+    let right = view.right();
+    for (c, cell) in cells.iter().enumerate() {
+        for i in 0..cell.points.len() {
+            let site = sites[c];
+            let d = cell.points[(i + cell.points.len() - 1) % cell.points.len()];
+            let a = cell.points[i];
+            let b = cell.points[(i + 1) % cell.points.len()];
+
+            if a.is_nan() && b.is_nan() {
+                // todo!()
+            } else if a.is_nan() {
+                {
+                    let n = cell.neighbors[i];
+                    let bnc = Bisector::new(c as SiteIdx, n);
+
+                    let (p1, p2);
+                    if site.pos.y == sites[n as usize].pos.y {
+                        p1 = vec2((site.pos.x + sites[n as usize].pos.x) / 2.0, view.top());
+                        p2 = vec2((site.pos.x + sites[n as usize].pos.x) / 2.0, view.bottom());
+                    } else {
+                        p1 = vec2(left, bnc.y_at(sites, left));
+                        p2 = vec2(right, bnc.y_at(sites, right));
+                    }
+
+                    if (sites[n as usize].pos - site.pos).perp_dot(p1 - site.pos) > 0.0 {
+                        draw_line(p1.x, p1.y, d.pos.x, d.pos.y, 0.02, RED);
+                    } else {
+                        draw_line(p2.x, p2.y, d.pos.x, d.pos.y, 0.02, RED);
+                    }
+                }
+                {
+                    let n = cell.neighbors[(i + 1) % cell.points.len()];
+                    let bnc = Bisector::new(c as SiteIdx, n);
+
+                    let (p1, p2);
+                    if site.pos.y == sites[n as usize].pos.y {
+                        p1 = vec2((site.pos.x + sites[n as usize].pos.x) / 2.0, view.top());
+                        p2 = vec2((site.pos.x + sites[n as usize].pos.x) / 2.0, view.bottom());
+                    } else {
+                        p1 = vec2(left, bnc.y_at(sites, left));
+                        p2 = vec2(right, bnc.y_at(sites, right));
+                    }
+
+                    if (sites[n as usize].pos - site.pos).perp_dot(p1 - site.pos) < 0.0 {
+                        draw_line(p1.x, p1.y, b.pos.x, b.pos.y, 0.02, RED);
+                    } else {
+                        draw_line(p2.x, p2.y, b.pos.x, b.pos.y, 0.02, RED);
+                    }
+                }
+            } else if b.is_nan() {
+            } else {
+                draw_line(a.pos.x, a.pos.y, b.pos.x, b.pos.y, 0.02, RED);
+                draw_circle(a.pos.x, a.pos.y, 0.05, RED);
+            }
+        }
+    }
+}
+
+/// I put the the proc-macro in an wrapper function to workaround it breaking rust-analyzer quick
+/// actions.
 #[macroquad::main("Tree")]
 async fn main() {
+    main_().await
+}
+
+async fn main_() {
+    request_new_screen_size(600.0, 600.0);
+
     let (send, recv) = std::sync::mpsc::sync_channel(0);
 
     let points = [
@@ -655,12 +842,14 @@ async fn main() {
 
     let bottom_left = camera.screen_to_world(vec2(0.0, 0.0));
     let top_right = camera.screen_to_world(vec2(screen_width(), screen_height()));
-    let left = bottom_left.x;
-    let right = top_right.x;
-    let top = bottom_left.y;
-    let bottom = top_right.y;
+    let view = Rect {
+        x: bottom_left.x,
+        y: top_right.y,
+        w: top_right.x - bottom_left.x,
+        h: bottom_left.y - top_right.y,
+    };
 
-    let mut vertexes = None;
+    let mut cells = None;
 
     loop {
         clear_background(LIGHTGRAY);
@@ -675,38 +864,32 @@ async fn main() {
             }
 
             if _thread.as_ref().is_some_and(|x| x.is_finished()) {
-                vertexes = Some(_thread.take().unwrap().join().unwrap());
-            }
-        }
-
-        if let Some(vertexes) = &vertexes {
-            for vs in vertexes {
-                for v in vs {
-                    draw_circle(v.pos.x, v.pos.y, 0.05, RED);
-                }
+                cells = Some(_thread.take().unwrap().join().unwrap());
             }
         }
 
         let mut hyperbola_colors = [GREEN, GREEN];
-        for (p, b) in benchline.regions.iter() {
-            let p = sites[*p as usize];
+
+        for p in benchline.get_regions() {
+            let p = sites[p as usize];
+            draw_circle(p.pos.x, p.pos.y, 0.1, BLUE);
+        }
+
+        for b in benchline.get_bisectors() {
+            let step = (view.right() - view.left()) / 100.0;
+
+            let y0 = b.y_at(sites, view.left());
+            let y1 = b.y_at(sites, view.right());
+
+            draw_line(view.left(), y0, view.right(), y1, 0.02, BLUE);
+            // draw_line(b.a.pos.x, b.a.pos.y, b.b.pos.x, b.b.pos.y, 0.02, BLUE);
 
             hyperbola_colors.swap(0, 1);
             let hcolor = hyperbola_colors[0];
 
-            draw_circle(p.pos.x, p.pos.y, 0.1, BLUE);
-
-            let step = (right - left) / 100.0;
-
-            let y0 = b.y_at(sites, left);
-            let y1 = b.y_at(sites, right);
-
-            draw_line(left, y0, right, y1, 0.02, BLUE);
-            // draw_line(b.a.pos.x, b.a.pos.y, b.b.pos.x, b.b.pos.y, 0.02, BLUE);
-
             for i in 0..100 {
-                let mut x1 = left + i as f32 * step;
-                let mut x2 = left + (i + 1) as f32 * step;
+                let mut x1 = view.left() + i as f32 * step;
+                let mut x2 = view.left() + (i + 1) as f32 * step;
 
                 if x2 < b.min_x {
                     continue;
@@ -726,7 +909,9 @@ async fn main() {
                 if !y1.is_finite() || !y2.is_finite() {
                     continue;
                 }
-                if (y1 > top || y1 < bottom) && (y2 > top || y2 < bottom) {
+                if (y1 > view.bottom() || y1 < view.top())
+                    && (y2 > view.bottom() || y2 < view.top())
+                {
                     continue;
                 }
                 draw_line(x1, y1, x2, y2, 0.03, hcolor);
@@ -741,9 +926,13 @@ async fn main() {
                 }
                 Event::Intersection(p, _) => {
                     draw_circle(p.pos.x, p.pos.y, 0.05, BLACK);
-                    draw_line(p.pos.x, bottom, p.pos.x, top, 0.02, BLACK);
+                    draw_line(p.pos.x, view.top(), p.pos.x, view.bottom(), 0.02, BLACK);
                 }
             }
+        }
+
+        if let Some(cells) = &cells {
+            draw_diagram(view, cells, sites).await;
         }
 
         next_frame().await

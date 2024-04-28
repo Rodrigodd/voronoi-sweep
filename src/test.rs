@@ -1,5 +1,8 @@
-use super::*;
+use std::ops::Not;
+
+use super::{circumcenter, dist, fortune_algorithm, vec2, Bisector, Cell, Point, SiteIdx};
 use quickcheck::{Arbitrary, Gen};
+use rand::{seq::SliceRandom, Rng};
 
 impl Arbitrary for Point {
     fn arbitrary(g: &mut Gen) -> Self {
@@ -135,6 +138,10 @@ fn diagram() {
     let r = Point { pos: vec2(1., 1.) };
     let points = [p, q, r];
 
+    let intersection = Bisector::new(0, 1)
+        .intersection(&points, Bisector::new(1, 2))
+        .unwrap();
+
     let mut expected_benchline: &[&[SiteIdx]] = &[
         &[0],             // first region
         &[0, 1, 0],       // insert q
@@ -142,26 +149,29 @@ fn diagram() {
         &[0, 1, 2, 0],    // intersect q and r
     ];
 
-    let _vertexes = fortune_algorithm(&points, &mut |benchline, _| {
+    let vertexes = fortune_algorithm(&points, &mut |benchline, _| {
         let regions = benchline.get_regions().collect::<Vec<_>>();
         println!("regions: {:?}", regions);
         assert_eq!(regions, expected_benchline[0]);
         expected_benchline = &expected_benchline[1..];
     });
 
-    // for (site, vertexes) in vertexes {
-    //     println!("site: {:?}", site);
-    //     for vertex in &vertexes {
-    //         println!("  vertex: {:?}", vertex);
-    //     }
-    //
-    //     let dists: Vec<f32> = vertexes.iter().map(|v| dist(site, *v)).collect();
-    //
-    //     assert!(dists.iter().all(|d| *d > 0.0));
-    //
-    //     // all dists should be the same
-    //     assert!(dists.windows(2).all(|w| close(w[0], w[1])));
-    // }
+    for cell in vertexes.into_iter() {
+        println!("cell {:?}", cell);
+
+        let points: Vec<Point> = cell
+            .points
+            .into_iter()
+            .filter(|v| v.is_nan().not())
+            .collect();
+
+        assert_eq!(cell.neighbors.len(), 2);
+        assert_eq!(points.len(), 1);
+
+        println!("points: {:?}", points);
+
+        assert_eq!(points[0], intersection);
+    }
 }
 
 #[quickcheck]
@@ -204,7 +214,7 @@ fn diagram1() {
         &[0, 1, 3, 2, 0],       // intersect q r s
     ];
 
-    let _vertexes = fortune_algorithm(&points, &mut |benchline, _| {
+    let vertexes = fortune_algorithm(&points, &mut |benchline, _| {
         let regions = benchline.get_regions().collect::<Vec<_>>();
         println!("regions: {:?}", regions);
         if regions != expected_benchline[0] {
@@ -213,6 +223,34 @@ fn diagram1() {
         assert_eq!(regions, expected_benchline[0]);
         expected_benchline = &expected_benchline[1..];
     });
+
+    assert!(expected_benchline.is_empty());
+    assert_eq!(vertexes.len(), points.len());
+
+    for (cell, &site) in vertexes.into_iter().zip(&points) {
+        println!("cell {:?}", cell);
+
+        let intersection_count = cell.points.iter().filter(|v| v.is_nan().not()).count();
+
+        assert!(!cell.points.is_empty());
+        assert!(intersection_count <= cell.points.len());
+        assert!(intersection_count >= cell.points.len() - 2);
+
+        // the distance of the intersection point to the site should be the same as the distance to
+        // the neighbors
+        for (&p, &neigh) in cell.points.iter().zip(cell.neighbors.iter()) {
+            if p.is_nan() {
+                continue;
+            }
+
+            let dist_p = dist(p, site);
+            let dist_neigh = dist(p, points[neigh as usize]);
+
+            println!("dist_p: {}, dist_neigh: {}", dist_p, dist_neigh);
+
+            assert!(close(dist_p, dist_neigh));
+        }
+    }
 }
 
 #[quickcheck]
@@ -317,4 +355,56 @@ fn test_circumcenter(a: (u8, u8), b: (u8, u8), c: (u8, u8)) {
 
     assert!(close(r1, r2));
     assert!(close(r1, r3));
+}
+
+#[test]
+fn test_cell() {
+    let points = [
+        (0, 0),
+        (9, 0),
+        (7, 7),
+        (0, 9),
+        (-7, 7),
+        (-9, 0),
+        (-7, -7),
+        (0, -9),
+        (7, -7),
+    ];
+
+    let sites = &points
+        .iter()
+        .map(|&(x, y)| Point {
+            pos: vec2(x as f32, y as f32),
+        })
+        .collect::<Vec<_>>();
+
+    let mut intersections: Vec<_> = (1..sites.len() as u32)
+        .map(|a| {
+            let b = a % (sites.len() as u32 - 1) + 1;
+
+            let boa = Bisector::new(0, a);
+            let bob = Bisector::new(0, b);
+
+            let intersection = boa.intersection(sites, bob).unwrap();
+
+            (a, intersection, b)
+        })
+        .collect();
+
+    let hull_points = intersections.iter().map(|(_, p, _)| *p).collect::<Vec<_>>();
+
+    let mut cell = Cell::new();
+
+    let mut rng = rand::thread_rng();
+
+    intersections.shuffle(&mut rng);
+
+    for (mut a, p, mut b) in intersections {
+        if rng.gen() {
+            std::mem::swap(&mut a, &mut b);
+        }
+        cell.add_point(sites, p, 0, a as SiteIdx, b as SiteIdx);
+    }
+
+    assert_eq!(cell.points, hull_points);
 }
