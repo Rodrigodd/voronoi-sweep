@@ -300,10 +300,13 @@ pub fn fortune_algorithm(
 
                 // 16. Update list L so it contains Cqs = Cqs- or Cqs+,as appropriate, instead of Cqr, R*r, Crs.
                 let region_r_idx = benchline.find_region3(q_idx, r_idx, s_idx);
-                let cqs = if p.pos.x < r.pos.x {
-                    bqs.c_minus(sites)
-                } else {
+
+                // Cqs is Cqs+ either if p is to the right of the higher of q and s or if q and s
+                // are cohorizontal; otherwise Cqs is Cqs-.
+                let cqs = if p.pos.x > q.max(s).pos.x || q.pos.y == s.pos.y {
                     bqs.c_plus(sites)
+                } else {
+                    bqs.c_minus(sites)
                 };
 
                 let cqr = benchline.get_left_boundary(region_r_idx).unwrap();
@@ -530,14 +533,30 @@ impl Bisector {
     }
 
     fn c_minus(self, sites: &[Point]) -> Bisector {
-        let a = sites[self.a as usize];
+        let (a, b) = self.ab(sites);
+
+        // If py = qy, then we set Cpq- = {} and Cpq+ = *p(Bpq).
+        if a.pos.y == b.pos.y {
+            return Self {
+                min_x: f32::INFINITY,
+                max_x: f32::NEG_INFINITY,
+                ..self
+            };
+        }
+
         Bisector {
             max_x: a.pos.x,
             ..self
         }
     }
     fn c_plus(self, sites: &[Point]) -> Bisector {
-        let a = sites[self.a as usize];
+        let (a, b) = self.ab(sites);
+
+        // If py = qy, then we set Cpq- = {} and Cpq+ = *p(Bpq).
+        if a.pos.y == b.pos.y {
+            return self;
+        }
+
         Bisector {
             min_x: a.pos.x,
             ..self
