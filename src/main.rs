@@ -1,7 +1,3 @@
-#[cfg(test)]
-#[macro_use(quickcheck)]
-extern crate quickcheck_macros;
-
 use std::f32::consts::TAU;
 
 use macroquad::prelude::*;

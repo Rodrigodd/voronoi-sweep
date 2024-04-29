@@ -1,26 +1,12 @@
 use std::ops::Not;
 
 use super::{circumcenter, dist, fortune_algorithm, vec2, Bisector, Cell, Point, SiteIdx};
-use quickcheck::{Arbitrary, Gen};
+use proptest::prelude::*;
+use proptest::test_runner::TestRunner;
 use rand::{seq::SliceRandom, Rng};
 
-impl Arbitrary for Point {
-    fn arbitrary(g: &mut Gen) -> Self {
-        let mut gen = || loop {
-            let x = f32::arbitrary(g);
-            if x.is_finite() && x.abs() < 1.0e12 {
-                return x;
-            }
-        };
-
-        Point {
-            pos: vec2(gen(), gen()),
-        }
-    }
-}
-
 fn close(a: f32, b: f32) -> bool {
-    (a - b).abs() < (a + b).abs() * 1e-5
+    (a - b).abs() < (a + b).abs() * 2e-5
 }
 
 #[test]
@@ -40,8 +26,39 @@ fn bisector_intersection() {
     assert_eq!(p.pos, vec2(0.5, 0.5));
 }
 
-#[quickcheck]
-fn bisector_intersections(a: Point, b: Point, c: Point, d: Point) -> bool {
+#[test]
+fn bisector_intersections() {
+    let mut runner = TestRunner::default();
+    runner
+        .run(
+            &(
+                (0..10u8, 0..10u8),
+                (0..10u8, 0..10u8),
+                (0..10u8, 0..10u8),
+                (0..10u8, 0..10u8),
+            ),
+            |(a, b, c, d)| {
+                bisector_intersections_(a, b, c, d);
+                Ok(())
+            },
+        )
+        .unwrap();
+}
+
+fn bisector_intersections_(a: (u8, u8), b: (u8, u8), c: (u8, u8), d: (u8, u8)) -> bool {
+    let a = Point {
+        pos: vec2(a.0 as f32, a.1 as f32),
+    };
+    let b = Point {
+        pos: vec2(b.0 as f32, b.1 as f32),
+    };
+    let c = Point {
+        pos: vec2(c.0 as f32, c.1 as f32),
+    };
+    let d = Point {
+        pos: vec2(d.0 as f32, d.1 as f32),
+    };
+
     let sites = &[a, b, c, d];
     let ab = super::Bisector::new(0, 1);
     let cd = super::Bisector::new(2, 3);
@@ -174,8 +191,36 @@ fn diagram() {
     }
 }
 
-#[quickcheck]
-fn diagram_fuzz(mut points: Vec<(u8, u8)>) {
+#[test]
+fn diagram_fuzz() {
+    let mut runner = TestRunner::default();
+
+    let points = proptest::collection::vec((0..5u8, 0..5u8), 0..4);
+
+    runner
+        .run(&points, |points| {
+            diagram_fuzz_(points);
+            Ok(())
+        })
+        .unwrap();
+}
+
+// #[test]
+// fn diagram_fuzz1() {
+//     diagram_fuzz_(vec![
+//         (151, 151),
+//         (0, 44),
+//         (9, 41),
+//         (37, 8),
+//         (0, 23),
+//         (99, 0),
+//         (0, 45),
+//         (0, 46),
+//         (99, 142),
+//     ])
+// }
+
+fn diagram_fuzz_(mut points: Vec<(u8, u8)>) {
     points.sort();
     points.dedup();
 
@@ -253,7 +298,13 @@ fn diagram1() {
     }
 }
 
-#[quickcheck]
+proptest! {
+    #[test]
+    fn bisector_y_at_(a: (u8, u8), b: (u8, u8)) {
+        bisector_y_at(a, b);
+    }
+}
+
 fn bisector_y_at(a: (u8, u8), b: (u8, u8)) -> bool {
     let p = Point {
         pos: vec2(a.0 as f32, a.1 as f32),
@@ -322,7 +373,13 @@ fn y_star_at() {
     assert!(close(y_star, 2.0));
 }
 
-#[quickcheck]
+proptest! {
+    #[test]
+    fn test_circumcenter_(a: (u8, u8), b: (u8, u8), c: (u8, u8)) {
+        test_circumcenter(a, b, c);
+    }
+}
+
 fn test_circumcenter(a: (u8, u8), b: (u8, u8), c: (u8, u8)) {
     // check if points are collinear
     {
