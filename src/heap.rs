@@ -107,6 +107,8 @@ impl<T: fmt::Debug, F> fmt::Debug for Heap<T, F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
     #[test]
     fn test_heap() {
         let mut heap = Heap::new(|a: &i32, b: &i32| a.cmp(b));
@@ -122,5 +124,25 @@ mod tests {
         assert_eq!(heap.pop(), Some(4));
         assert_eq!(heap.pop(), None);
         assert_eq!(heap.len(), 0);
+    }
+
+    proptest! {
+        #[test]
+        fn always_sort(mut items: Vec<u32>) {
+            let mut heap = Heap::new(u32::cmp);
+
+            for item in items.iter().copied() {
+                heap.push(item);
+            }
+
+            let mut heap_order = vec![];
+            while let Some(item) = heap.pop() {
+                heap_order.push(item);
+            }
+
+            items.sort();
+
+            assert_eq!(items, heap_order);
+        }
     }
 }
