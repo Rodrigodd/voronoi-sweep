@@ -205,20 +205,10 @@ fn diagram_fuzz() {
         .unwrap();
 }
 
-// #[test]
-// fn diagram_fuzz1() {
-//     diagram_fuzz_(vec![
-//         (151, 151),
-//         (0, 44),
-//         (9, 41),
-//         (37, 8),
-//         (0, 23),
-//         (99, 0),
-//         (0, 45),
-//         (0, 46),
-//         (99, 142),
-//     ])
-// }
+#[test]
+fn diagram_fuzz1() {
+    diagram_fuzz_(vec![(2, 0), (0, 1), (4, 1), (2, 2)])
+}
 
 fn diagram_fuzz_(mut points: Vec<(u8, u8)>) {
     points.sort();

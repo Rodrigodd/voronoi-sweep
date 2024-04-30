@@ -242,6 +242,36 @@ pub fn fortune_algorithm(
 
                 // 11. Delete from Q the intersection between the left and right boundary of Rq*,
                 //     if any.
+                'middle: {
+                    let Some(left_neighbor) = benchline.get_left_boundary(reg_q_idx) else {
+                        break 'middle;
+                    };
+
+                    let Some(right_neighbor) = benchline.get_righ_boundary(reg_q_idx + 2) else {
+                        break 'middle;
+                    };
+
+                    println!(
+                        "removing: {} {} {} {}",
+                        left_neighbor.a, left_neighbor.b, right_neighbor.a, right_neighbor.b
+                    );
+
+                    events.remove(|e| match e {
+                        &Event::Intersection(_, (a, b, c)) => {
+                            println!("checking: {} {} {}", a, b, c);
+                            let retain = (a == left_neighbor.a || a == left_neighbor.b)
+                                && (b == right_neighbor.a || b == right_neighbor.b)
+                                && (c == right_neighbor.a || c == right_neighbor.b);
+
+                            if retain {
+                                println!("removing {:?}", e);
+                            }
+
+                            retain
+                        }
+                        _ => false,
+                    });
+                }
 
                 // 12. Insert into Q the intersection between Cpq- and its neighbor to the left on
                 //     L, if any, and the intersection between Cpq+, and its neighbor to the right,
@@ -292,10 +322,21 @@ pub fn fortune_algorithm(
 
                 // Cqs is Cqs+ either if p is to the right of the higher of q and s or if q and s
                 // are cohorizontal; otherwise Cqs is Cqs-.
+                // NOTE: Found a case where Cqs+ of one point and Csr- can intersect at s (see test
+                // case `test::diagram_fuzz1`), so I strict the bounds to avoid this. Not sure if
+                // this was handled somewhere in the paper.
                 let cqs = if p.pos.x > q.max(s).pos.x || q.pos.y == s.pos.y {
-                    bqs.c_plus(sites)
+                    // bqs.c_plus(sites)
+                    Bisector {
+                        min_x: p.pos.x,
+                        ..bqs
+                    }
                 } else {
-                    bqs.c_minus(sites)
+                    // bqs.c_minus(sites)
+                    Bisector {
+                        max_x: p.pos.x,
+                        ..bqs
+                    }
                 };
 
                 let cqr = benchline.get_left_boundary(region_r_idx).unwrap();
@@ -521,6 +562,7 @@ impl Bisector {
         }
     }
 
+    // Cpq- to the left o f and containing p.
     fn c_minus(self, sites: &[Point]) -> Bisector {
         let (a, b) = self.ab(sites);
 
@@ -538,6 +580,8 @@ impl Bisector {
             ..self
         }
     }
+
+    // Cpq+ to the right o f and containing p.
     fn c_plus(self, sites: &[Point]) -> Bisector {
         let (a, b) = self.ab(sites);
 
