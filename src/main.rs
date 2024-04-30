@@ -311,17 +311,17 @@ pub fn fortune_algorithm(
 
                     events.remove(|e| match e {
                         &Event::Intersection(_, (a, b, c)) => {
-                            let retain = !((a == left_neighbor.a || a == left_neighbor.b)
+                            let retain = (a == left_neighbor.a || a == left_neighbor.b)
                                 && (b == cqr.a || b == cqr.b)
-                                && (c == cqr.a || c == cqr.b));
+                                && (c == cqr.a || c == cqr.b);
 
-                            if !retain {
+                            if retain {
                                 println!("removing {:?}", e);
                             }
 
                             retain
                         }
-                        _ => true,
+                        _ => false,
                     });
                 }
 
@@ -332,17 +332,17 @@ pub fn fortune_algorithm(
 
                     events.remove(|e| match e {
                         &Event::Intersection(_, (a, b, c)) => {
-                            let retain = !((a == crs.a || a == crs.b)
+                            let retain = (a == crs.a || a == crs.b)
                                 && (b == crs.a || b == crs.b)
-                                && (c == right_neighbor.a || c == right_neighbor.b));
+                                && (c == right_neighbor.a || c == right_neighbor.b);
 
-                            if !retain {
+                            if retain {
                                 println!("removing {:?}", e);
                             }
 
                             retain
                         }
-                        _ => true,
+                        _ => false,
                     });
                 }
 
