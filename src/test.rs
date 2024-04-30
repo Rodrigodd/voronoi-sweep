@@ -219,14 +219,42 @@ fn diagram_fuzz_(mut points: Vec<(u8, u8)>) {
     points.sort();
     points.dedup();
 
-    let points = points
+    let sites = points
         .into_iter()
         .map(|(x, y)| Point {
             pos: vec2(x as f32, y as f32),
         })
         .collect::<Vec<_>>();
 
-    fortune_algorithm(&points, &mut |_, _| {});
+    let vertexes = fortune_algorithm(&sites, &mut |_, _| {});
+
+    for (cell, &site) in vertexes.into_iter().zip(&sites) {
+        println!("cell {:?}", cell);
+
+        let intersection_count = cell.points.iter().filter(|v| v.is_nan().not()).count();
+
+        if sites.len() > 1 {
+            assert!(!cell.points.is_empty());
+        }
+
+        assert!(intersection_count <= cell.points.len());
+        assert!(intersection_count + 2 >= cell.points.len());
+
+        // the distance of the intersection point to the site should be the same as the distance to
+        // the neighbors
+        for (&p, &neigh) in cell.points.iter().zip(cell.neighbors.iter()) {
+            if p.is_nan() {
+                continue;
+            }
+
+            let dist_p = dist(p, site);
+            let dist_neigh = dist(p, sites[neigh as usize]);
+
+            println!("dist_p: {}, dist_neigh: {}", dist_p, dist_neigh);
+
+            assert!(close(dist_p, dist_neigh));
+        }
+    }
 }
 
 #[test]
@@ -264,6 +292,7 @@ fn diagram1() {
         expected_benchline = &expected_benchline[1..];
     });
 
+    println!("expected_benchline: {:?}", expected_benchline);
     assert!(expected_benchline.is_empty());
     assert_eq!(vertexes.len(), points.len());
 
