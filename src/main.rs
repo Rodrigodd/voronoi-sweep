@@ -325,21 +325,11 @@ pub fn fortune_algorithm(
 
                 // Cqs is Cqs+ either if p is to the right of the higher of q and s or if q and s
                 // are cohorizontal; otherwise Cqs is Cqs-.
-                // NOTE: Found a case where Cqs+ of one point and Csr- can intersect at s (see test
-                // case `test::diagram_fuzz1`), so I strict the bounds to avoid this. Not sure if
-                // this was handled somewhere in the paper.
-                let cqs = if p.pos.x > q.max(s).pos.x || q.pos.y == s.pos.y {
-                    // bqs.c_plus(sites)
-                    Bisector {
-                        min_x: p.pos.x,
-                        ..bqs
-                    }
+                let plus = p.pos.x > q.max(s).pos.x || q.pos.y == s.pos.y;
+                let cqs = if plus {
+                    bqs.c_plus(sites)
                 } else {
-                    // bqs.c_minus(sites)
-                    Bisector {
-                        max_x: p.pos.x,
-                        ..bqs
-                    }
+                    bqs.c_minus(sites)
                 };
 
                 let cqr = benchline.get_left_boundary(region_r_idx).unwrap();
@@ -668,7 +658,11 @@ impl Bisector {
         let (a, b) = self.ab(sites);
         let (oa, ob) = other.ab(sites);
 
-        if self.min_x > other.max_x || self.max_x < other.min_x {
+        // NOTE: by Cpq+ and Cpq- description, they should have a common point, and therefore these
+        // bounds should be inclusive. But that were causing points to intersect at the edges of
+        // the bisectors, causing problems. Making the bounds exclusive fixed the problem. Not sure
+        // if this was beign handled in the paper somewhere.
+        if self.min_x >= other.max_x || self.max_x <= other.min_x {
             return None;
         }
 
