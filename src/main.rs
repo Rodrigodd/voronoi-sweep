@@ -233,6 +233,9 @@ pub fn fortune_algorithm(
                 let reg_q_idx = benchline.find_region(sites, p);
                 let q_idx = benchline.get_region(reg_q_idx);
 
+                vertices[p_idx as usize].add_neighbor(sites, p_idx, q_idx);
+                vertices[q_idx as usize].add_neighbor(sites, q_idx, p_idx);
+
                 // 9. Create bisector Bpq*.
                 let bpq = Bisector::new(sites, p_idx, q_idx);
 
@@ -420,9 +423,9 @@ pub fn fortune_algorithm(
 
                 // 19. Mark p as a vertex and as an endpoint of Bqr*, Brs*, and Bqs*.
                 let p_unstar = circumcenter(q, r, s);
-                vertices[q_idx as usize].add_point(sites, p_unstar, q_idx, r_idx, s_idx);
-                vertices[r_idx as usize].add_point(sites, p_unstar, r_idx, q_idx, s_idx);
-                vertices[s_idx as usize].add_point(sites, p_unstar, s_idx, q_idx, r_idx);
+                vertices[q_idx as usize].add_vertex(sites, p_unstar, q_idx, r_idx, s_idx);
+                vertices[r_idx as usize].add_vertex(sites, p_unstar, r_idx, q_idx, s_idx);
+                vertices[s_idx as usize].add_vertex(sites, p_unstar, s_idx, q_idx, r_idx);
             }
         }
         on_progress(&benchline, events.as_slice());
@@ -496,7 +499,7 @@ impl Cell {
     ///
     /// The point is inserted in the correct position in the list of points, and a placeholder is
     /// added if necessary to keep the constraint `points.len == neighbors.len-1`.
-    fn add_point(
+    fn add_vertex(
         &mut self,
         sites: &[Point],
         point: Point,

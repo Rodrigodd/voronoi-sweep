@@ -450,7 +450,7 @@ fn test_cell() {
         if rng.gen() {
             std::mem::swap(&mut a, &mut b);
         }
-        cell.add_point(sites, p, 0, a as SiteIdx, b as SiteIdx);
+        cell.add_vertex(sites, p, 0, a as SiteIdx, b as SiteIdx);
     }
 
     assert_eq!(cell.points, hull_points);
