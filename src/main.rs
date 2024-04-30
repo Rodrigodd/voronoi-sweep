@@ -26,21 +26,10 @@ impl Point {
 }
 impl std::fmt::Debug for Point {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // f.debug_tuple("Point")
-        //     .field(&self.pos.x)
-        //     .field(&self.pos.y)
-        //     .finish()
-        match ((self.pos.x * 100.0) as u32, (self.pos.y * 100.0) as u32) {
-            (400, 000) => f.write_str("p"),
-            (000, 100) => f.write_str("q"),
-            (500, 200) => f.write_str("r"),
-            (500, 300) => f.write_str("s"),
-            _ => f
-                .debug_tuple("Point")
-                .field(&self.pos.x)
-                .field(&self.pos.y)
-                .finish(),
-        }
+        f.debug_tuple("Point")
+            .field(&self.pos.x)
+            .field(&self.pos.y)
+            .finish()
     }
 }
 impl std::hash::Hash for Point {
