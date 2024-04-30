@@ -18,8 +18,8 @@ fn bisector_intersection() {
         Point { pos: vec2(1., 1.) },
     ];
 
-    let ad = super::Bisector::new(0, 3);
-    let bc = super::Bisector::new(1, 2);
+    let ad = super::Bisector::new(sites, 0, 3);
+    let bc = super::Bisector::new(sites, 1, 2);
 
     let p = ad.intersection(sites, bc).unwrap();
 
@@ -60,8 +60,8 @@ fn bisector_intersections_(a: (u8, u8), b: (u8, u8), c: (u8, u8), d: (u8, u8)) -
     };
 
     let sites = &[a, b, c, d];
-    let ab = super::Bisector::new(0, 1);
-    let cd = super::Bisector::new(2, 3);
+    let ab = super::Bisector::new(sites, 0, 1);
+    let cd = super::Bisector::new(sites, 2, 3);
 
     println!("ab: {:?}, cd: {:?}", ab, cd);
 
@@ -95,7 +95,7 @@ fn bisector_cmp() {
 
     let sites = &[p, q, r, t];
 
-    let bpq = Bisector::new(0, 1);
+    let bpq = Bisector::new(sites, 0, 1);
 
     assert_eq!(
         bpq.c_plus(sites).star_cmp(sites, r),
@@ -115,7 +115,7 @@ fn bisector_cmp1() {
 
     let sites = &[p, q, r];
 
-    let bpq = Bisector::new(0, 1).c_plus(sites);
+    let bpq = Bisector::new(sites, 0, 1).c_plus(sites);
 
     let y = bpq.y_star_at(sites, r.pos.x);
 
@@ -132,9 +132,9 @@ fn bisector_no_intersection() {
 
     let sites = &[p, q, r];
 
-    let bpq = Bisector::new(0, 1);
-    let bqr = Bisector::new(1, 2);
-    let bpr = Bisector::new(0, 2);
+    let bpq = Bisector::new(sites, 0, 1);
+    let bqr = Bisector::new(sites, 1, 2);
+    let bpr = Bisector::new(sites, 0, 2);
 
     let cqr_plus = bqr.c_plus(sites);
     let cqr_minus = bqr.c_minus(sites);
@@ -155,8 +155,8 @@ fn diagram() {
     let r = Point { pos: vec2(1., 1.) };
     let points = [p, q, r];
 
-    let intersection = Bisector::new(0, 1)
-        .intersection(&points, Bisector::new(1, 2))
+    let intersection = Bisector::new(&points, 0, 1)
+        .intersection(&points, Bisector::new(&points, 1, 2))
         .unwrap();
 
     let mut expected_benchline: &[&[SiteIdx]] = &[
@@ -319,7 +319,7 @@ fn bisector_y_at(a: (u8, u8), b: (u8, u8)) -> bool {
         return true;
     }
 
-    let bisector = Bisector::new(0, 1);
+    let bisector = Bisector::new(sites, 0, 1);
 
     let mean = (p.pos + q.pos) / 2.0;
 
@@ -341,7 +341,7 @@ fn bisector_y_at1() {
 
     let sites = &[p, q];
 
-    let bisector = Bisector::new(0, 1);
+    let bisector = Bisector::new(sites, 0, 1);
 
     let y_at = bisector.y_at(sites, 0.5);
 
@@ -364,7 +364,7 @@ fn y_star_at() {
 
     let sites = &[p, q, r];
 
-    let bpq = Bisector::new(0, 1);
+    let bpq = Bisector::new(sites, 0, 1);
 
     let y_star = bpq.y_star_at(sites, r.pos.x);
 
@@ -439,8 +439,8 @@ fn test_cell() {
         .map(|a| {
             let b = a % (sites.len() as u32 - 1) + 1;
 
-            let boa = Bisector::new(0, a);
-            let bob = Bisector::new(0, b);
+            let boa = Bisector::new(sites, 0, a);
+            let bob = Bisector::new(sites, 0, b);
 
             let intersection = boa.intersection(sites, bob).unwrap();
 

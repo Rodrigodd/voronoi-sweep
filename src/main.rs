@@ -234,7 +234,7 @@ pub fn fortune_algorithm(
                 let q_idx = benchline.get_region(reg_q_idx);
 
                 // 9. Create bisector Bpq*.
-                let bpq = Bisector::new(p_idx, q_idx);
+                let bpq = Bisector::new(sites, p_idx, q_idx);
 
                 // 10. Update list L so that it contains ..., Rq*, Cpq-, Rp*, Cpq+, Rq*, ... in
                 //     place of Rq*.
@@ -285,7 +285,7 @@ pub fn fortune_algorithm(
                 // 14. Let p be the intersection of boundaries Cqr and Crs.
 
                 // 15. Create the bisector Bqs*.
-                let bqs = Bisector::new(q_idx, s_idx);
+                let bqs = Bisector::new(sites, q_idx, s_idx);
 
                 // 16. Update list L so it contains Cqs = Cqs- or Cqs+,as appropriate, instead of Cqr, R*r, Crs.
                 let region_r_idx = benchline.find_region3(q_idx, r_idx, s_idx);
@@ -509,8 +509,8 @@ impl Bisector {
         }
     }
 
-    fn new(mut a: SiteIdx, mut b: SiteIdx) -> Self {
-        if a < b {
+    fn new(sites: &[Point], mut a: SiteIdx, mut b: SiteIdx) -> Self {
+        if sites[a as usize] < sites[b as usize] {
             std::mem::swap(&mut a, &mut b);
         }
         Self {
@@ -747,7 +747,7 @@ async fn draw_diagram(view: Rect, cells: &[Cell], sites: &[Point]) {
             } else if a.is_nan() {
                 {
                     let n = cell.neighbors[i];
-                    let bnc = Bisector::new(c as SiteIdx, n);
+                    let bnc = Bisector::new(sites, c as SiteIdx, n);
 
                     let (p1, p2);
                     if site.pos.y == sites[n as usize].pos.y {
@@ -766,7 +766,7 @@ async fn draw_diagram(view: Rect, cells: &[Cell], sites: &[Point]) {
                 }
                 {
                     let n = cell.neighbors[(i + 1) % cell.points.len()];
-                    let bnc = Bisector::new(c as SiteIdx, n);
+                    let bnc = Bisector::new(sites, c as SiteIdx, n);
 
                     let (p1, p2);
                     if site.pos.y == sites[n as usize].pos.y {
