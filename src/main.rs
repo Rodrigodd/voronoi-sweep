@@ -97,6 +97,14 @@ impl Benchline {
     /// Find the region that contains the point.
     ///
     /// The regions fills the entire space, so there is always a region that contains the point.
+    ///
+    /// ## From the paper:
+    ///
+    /// > The search can be implemented as a binary search on list L, since L contains the regions
+    /// and boundaries in order on the horizontal line. If the site actually falls on a boundary,
+    /// the search can return the region on either side of the boundary. Note that the actual
+    /// x-coordinate where a boundary intersects the horizontal line is determined by the
+    /// y-coordinate of the line.
     fn find_region(&self, sites: &[Point], p: Point) -> usize {
         // debug print
         // println!("find_region for {:?}", p);
