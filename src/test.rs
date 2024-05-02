@@ -215,6 +215,11 @@ fn diagram_fuzz2() {
     diagram_fuzz_(vec![(0, 1), (1, 0), (1, 2)])
 }
 
+#[test]
+fn diagram_fuzz3() {
+    diagram_fuzz_(vec![(0, 0), (1, 0), (2, 0), (3, 0)])
+}
+
 fn diagram_fuzz_(mut points: Vec<(u8, u8)>) {
     points.sort();
     points.dedup();

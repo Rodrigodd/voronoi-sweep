@@ -55,6 +55,10 @@ impl<T, F: Fn(&T, &T) -> Ordering> Heap<T, F> {
         Some(ret)
     }
 
+    pub fn peek(&self) -> Option<&T> {
+        self.data.first()
+    }
+
     pub fn len(&self) -> usize {
         self.data.len()
     }

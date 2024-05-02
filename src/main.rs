@@ -180,7 +180,7 @@ pub fn fortune_algorithm(
 ) -> Vec<Cell> {
     // Algorithm 1: Computation of V*(S).
     // Input:
-    //  - S is a set of n >= 1 points with unique bottommost point.
+    //  - S is a set of n >= 1 points w̵̶̵i̵̶̵t̵̶̵h̵̶̵ ̵u̵̶̵n̵̶̵i̵̶̵q̵̶̵u̵̶̵e̵̶̵ ̵b̵̶̵o̵̶̵t̵̶̵t̵̶̵o̵̶̵m̵̶̵m̵̶̵o̵̶̵s̵̶̵t̵̶̵ ̵p̵̶̵o̵̶̵i̵̶̵n̵̶̵t̵̶̵.̵
     // Output:
     //  - The bisectors and vertices of V*.
     // Data structures:
@@ -218,12 +218,37 @@ pub fn fortune_algorithm(
     // 3. L <- the list containing Rp.
     let mut benchline = Benchline::new(p);
 
+    // Steps 2 and 3 make only work if there is only a single bottommost point. We can modify this
+    // step a little to make it work with multiple bottommost points.
+
+    // From Kenny Wong paper, create initial vertical boundary rays Rp1, C0_p1p2, Rp2, C0_p2p3, ...
+    while let Some(&Event::Site(q)) = events.peek() {
+        if sites[q as usize].pos.y != sites[p as usize].pos.y {
+            break;
+        }
+        events.pop();
+
+        let Some(p) = benchline.regions.last().map(|(p, _)| *p) else {
+            unreachable!();
+        };
+
+        benchline.regions.last_mut().unwrap().1 = Bisector::new(sites, p, q).c_plus(sites);
+        benchline.regions.push((q, Bisector::nill()));
+
+        vertices[p as usize].add_neighbor(sites, p, q);
+        vertices[q as usize].add_neighbor(sites, q, p);
+    }
+    println!("initial benchline: {:?}", benchline.regions);
+
     on_progress(&benchline, events.as_slice());
 
     // 4. while Q is not empty begin
     // 5. p <- extract min(Q)
     while let Some(event) = events.pop() {
-        println!("event {:?} of {:?}", event, events);
+        println!(
+            "event {:?} of {:?} in {:?}",
+            event, events, benchline.regions
+        );
         // 6. case
         match event {
             // 7. p is a site:
@@ -466,7 +491,6 @@ impl Cell {
             let b = sites[self.neighbors[i] as usize];
 
             if a == b {
-                println!("{}: already has neighbor {:?}", this, neighbor);
                 return i;
             }
 
@@ -522,7 +546,7 @@ impl Cell {
 }
 
 /// A segment of the bisector of two sites.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct Bisector {
     /// The higher point, the minimun point of the hyperbola "bisector*".
     a: SiteIdx,
@@ -532,6 +556,16 @@ pub struct Bisector {
     min_x: f32,
     /// The x value of the rightmost point of the hyperbola segment.
     max_x: f32,
+}
+
+impl std::fmt::Debug for Bisector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Bisector")
+            .field(&self.a)
+            .field(&self.b)
+            .field(&(self.min_x..self.max_x))
+            .finish()
+    }
 }
 impl Bisector {
     fn nill() -> Self {
@@ -544,9 +578,22 @@ impl Bisector {
     }
 
     fn new(sites: &[Point], mut a: SiteIdx, mut b: SiteIdx) -> Self {
-        if sites[a as usize] < sites[b as usize] {
+        let (p, q) = (sites[a as usize], sites[b as usize]);
+        if p < q {
             std::mem::swap(&mut a, &mut b);
         }
+
+        // If py = qy, then bisector* is a vertical half-line.
+        if p.pos.y == q.pos.y {
+            let mx = (p.pos.x + q.pos.x) / 2.0;
+            return Self {
+                a,
+                b,
+                min_x: mx,
+                max_x: mx,
+            };
+        }
+
         Self {
             a,
             b,
@@ -784,7 +831,34 @@ async fn draw_diagram(view: Rect, cells: &[Cell], sites: &[Point]) {
             let b = cell.points[(i + 1) % cell.points.len()];
 
             if a.is_nan() && b.is_nan() {
-                // todo!()
+                {
+                    let n = cell.neighbors[i];
+                    let bnc = Bisector::new(sites, c as SiteIdx, n);
+
+                    let (p1, p2);
+                    if site.pos.y == sites[n as usize].pos.y {
+                        p1 = vec2((site.pos.x + sites[n as usize].pos.x) / 2.0, view.top());
+                        p2 = vec2((site.pos.x + sites[n as usize].pos.x) / 2.0, view.bottom());
+                    } else {
+                        p1 = vec2(left, bnc.y_at(sites, left));
+                        p2 = vec2(right, bnc.y_at(sites, right));
+                    }
+                    draw_line(p1.x, p1.y, p2.x, p2.y, 0.02, RED);
+                }
+                {
+                    let n = cell.neighbors[i + 1];
+                    let bnc = Bisector::new(sites, c as SiteIdx, n);
+
+                    let (p1, p2);
+                    if site.pos.y == sites[n as usize].pos.y {
+                        p1 = vec2((site.pos.x + sites[n as usize].pos.x) / 2.0, view.top());
+                        p2 = vec2((site.pos.x + sites[n as usize].pos.x) / 2.0, view.bottom());
+                    } else {
+                        p1 = vec2(left, bnc.y_at(sites, left));
+                        p2 = vec2(right, bnc.y_at(sites, right));
+                    }
+                    draw_line(p1.x, p1.y, p2.x, p2.y, 0.02, RED);
+                }
             } else if a.is_nan() {
                 {
                     let n = cell.neighbors[i];
@@ -910,6 +984,7 @@ async fn main_() {
 
             if _thread.as_ref().is_some_and(|x| x.is_finished()) {
                 cells = Some(_thread.take().unwrap().join().unwrap());
+                println!("cells: {:?}", cells);
             }
         }
 
