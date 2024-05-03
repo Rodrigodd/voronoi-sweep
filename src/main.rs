@@ -927,17 +927,38 @@ async fn main_() {
 
     let (send, recv) = std::sync::mpsc::sync_channel(0);
 
-    let points = [
-        (4, 0), //
-        (0, 1),
-        (5, 2),
-        (5, 3),
-    ];
+    let mut points = Vec::new();
+
+    while points.len() < 10 {
+        let x = rand::gen_range(-128, 127i16);
+        let y = rand::gen_range(-128, 127i16);
+        points.push((x, y));
+        points.sort();
+        points.dedup();
+    }
+
+    let points = [(0, 0), (12, 4), (16, 4), (14, 8), (11, 9)];
+    // let points = [(0, 0), (12, 4), (16, 4), (14, 8), (11, 9)];
+
+    let bounds = points
+        .iter()
+        .copied()
+        .map(|(x, y)| (x, y, x, y))
+        .reduce(|(l, r, t, b), (x, y, _, _)| (l.min(x), r.max(x), t.min(y), b.max(y)))
+        .unwrap();
+
+    let side = (bounds.1 - bounds.0).max(bounds.3 - bounds.2) as f32;
+
+    let width = 3.0;
+    let height = 3.0;
 
     let sites = &points
         .iter()
         .map(|(x, y)| Point {
-            pos: vec2(*x as f32, *y as f32),
+            pos: vec2(
+                width * (x - bounds.0) as f32 / side,
+                height * (y - bounds.2) as f32 / side,
+            ),
         })
         .collect::<Vec<_>>();
 
@@ -949,13 +970,6 @@ async fn main_() {
             })
         }
     }));
-
-    let width = points.iter().map(|(x, _)| *x).max().unwrap() as f32;
-    let height = points.iter().map(|(_, y)| *y).max().unwrap() as f32;
-
-    let max = width.max(height);
-    let width = max;
-    let height = max;
 
     let camera = Camera2D {
         zoom: vec2(1.0 / width, -1.0 / height),
@@ -979,10 +993,8 @@ async fn main_() {
     let mut cells = None;
 
     loop {
-        clear_background(LIGHTGRAY);
-
-        for point in points {
-            draw_circle(point.0 as f32, point.1 as f32, 0.1, RED);
+        if is_key_pressed(KeyCode::Q) {
+            return;
         }
 
         if is_key_pressed(KeyCode::Space) {
@@ -996,6 +1008,17 @@ async fn main_() {
             }
         }
 
+        clear_background(LIGHTGRAY);
+
+        for (i, point) in sites.iter().enumerate() {
+            draw_circle(point.pos.x, point.pos.y, 0.08, RED);
+            for other in (i + 1)..sites.len() {
+                // draw bisector
+                let b = Bisector::new(sites, i as SiteIdx, other as SiteIdx);
+                draw_mediatriz(b, sites, view, GRAY);
+            }
+        }
+
         let mut hyperbola_colors = [GREEN, GREEN];
 
         for p in benchline.get_regions() {
@@ -1006,44 +1029,13 @@ async fn main_() {
         for b in benchline.get_bisectors() {
             let step = (view.right() - view.left()) / 100.0;
 
-            let y0 = b.y_at(sites, view.left());
-            let y1 = b.y_at(sites, view.right());
-
-            draw_line(view.left(), y0, view.right(), y1, 0.02, BLUE);
+            draw_mediatriz(b, sites, view, BLUE);
             // draw_line(b.a.pos.x, b.a.pos.y, b.b.pos.x, b.b.pos.y, 0.02, BLUE);
 
             hyperbola_colors.swap(0, 1);
             let hcolor = hyperbola_colors[0];
 
-            for i in 0..100 {
-                let mut x1 = view.left() + i as f32 * step;
-                let mut x2 = view.left() + (i + 1) as f32 * step;
-
-                if x2 < b.min_x {
-                    continue;
-                }
-                if x1 < b.min_x {
-                    x1 = b.min_x;
-                }
-                if x1 > b.max_x {
-                    continue;
-                }
-                if x2 > b.max_x {
-                    x2 = b.max_x;
-                }
-
-                let y1 = b.y_star_at(sites, x1);
-                let y2 = b.y_star_at(sites, x2);
-                if !y1.is_finite() || !y2.is_finite() {
-                    continue;
-                }
-                if (y1 > view.bottom() || y1 < view.top())
-                    && (y2 > view.bottom() || y2 < view.top())
-                {
-                    continue;
-                }
-                draw_line(x1, y1, x2, y2, 0.03, hcolor);
-            }
+            draw_hyperbola(view, step, b, sites, hcolor);
         }
 
         for v in events.iter() {
@@ -1065,4 +1057,54 @@ async fn main_() {
 
         next_frame().await
     }
+}
+
+fn draw_hyperbola(view: Rect, step: f32, b: Bisector, sites: &[Point], hcolor: Color) {
+    let (q, r) = (sites[b.a as usize], sites[b.b as usize]);
+    if q.pos.y == r.pos.y {
+        let x = (q.pos.x + r.pos.x) / 2.0;
+        draw_line(x, q.pos.y, x, view.bottom(), 0.03, hcolor);
+        return;
+    }
+
+    for i in 0..100 {
+        let mut x1 = view.left() + i as f32 * step;
+        let mut x2 = view.left() + (i + 1) as f32 * step;
+
+        if x2 < b.min_x {
+            continue;
+        }
+        if x1 < b.min_x {
+            x1 = b.min_x;
+        }
+        if x1 > b.max_x {
+            continue;
+        }
+        if x2 > b.max_x {
+            x2 = b.max_x;
+        }
+
+        let y1 = b.y_star_at(sites, x1);
+        let y2 = b.y_star_at(sites, x2);
+        if !y1.is_finite() || !y2.is_finite() {
+            continue;
+        }
+        if (y1 > view.bottom() || y1 < view.top()) && (y2 > view.bottom() || y2 < view.top()) {
+            continue;
+        }
+        draw_line(x1, y1, x2, y2, 0.03, hcolor);
+    }
+}
+
+fn draw_mediatriz(b: Bisector, sites: &[Point], view: Rect, color: Color) {
+    let (q, r) = (sites[b.a as usize], sites[b.b as usize]);
+    if q.pos.y == r.pos.y {
+        let x = (q.pos.x + r.pos.x) / 2.0;
+        draw_line(x, view.top(), x, view.bottom(), 0.02, color);
+        return;
+    }
+
+    let y0 = b.y_at(sites, view.left());
+    let y1 = b.y_at(sites, view.right());
+    draw_line(view.left(), y0, view.right(), y1, 0.02, color);
 }
