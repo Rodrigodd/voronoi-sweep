@@ -917,9 +917,18 @@ async fn draw_diagram(view: Rect, cells: &[Cell], sites: &[Point]) {
 
 /// I put the the proc-macro in an wrapper function to workaround it breaking rust-analyzer quick
 /// actions.
-#[macroquad::main("Tree")]
+#[macroquad::main(window_conf)]
 async fn main() {
     main_().await
+}
+
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "Voronoi".to_owned(),
+        // fullscreen: true,
+        sample_count: 4,
+        ..Default::default()
+    }
 }
 
 async fn main_() {
