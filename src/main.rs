@@ -684,10 +684,10 @@ impl Bisector {
     fn star_cmp(&self, sites: &[Point], point: Point) -> std::cmp::Ordering {
         let (a, b) = self.ab(sites);
 
-        if point.pos.x < self.min_x {
+        if point.pos.x <= self.min_x {
             return std::cmp::Ordering::Less;
         }
-        if point.pos.x >= self.max_x {
+        if point.pos.x > self.max_x {
             return std::cmp::Ordering::Greater;
         }
 
