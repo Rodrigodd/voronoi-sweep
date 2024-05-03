@@ -221,8 +221,11 @@ fn diagram_fuzz3() {
 }
 
 fn diagram_fuzz_(mut points: Vec<(u8, u8)>) {
-    points.sort();
-    points.dedup();
+    // remove duplicates
+    {
+        let mut hash = std::collections::HashSet::new();
+        points.retain(|v| hash.insert(*v));
+    }
 
     let sites = points
         .into_iter()
