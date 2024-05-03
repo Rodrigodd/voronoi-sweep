@@ -854,7 +854,7 @@ async fn draw_diagram(view: Rect, cells: &[Cell], sites: &[Point]) {
                     draw_line(p1.x, p1.y, p2.x, p2.y, 0.02, RED);
                 }
                 {
-                    let n = cell.neighbors[i + 1];
+                    let n = cell.neighbors[(i + 1) % cell.points.len()];
                     let bnc = Bisector::new(sites, c as SiteIdx, n);
 
                     let (p1, p2);
