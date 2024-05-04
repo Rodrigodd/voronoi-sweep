@@ -719,8 +719,17 @@ impl Bisector {
         let ord = point.pos.y.partial_cmp(&bisector_star_y).unwrap();
 
         // if this is the right half of the hyperbola, above y means left side.
-        if self.min_x == a.pos.x {
+        let ord = if self.min_x == a.pos.x {
             ord.reverse()
+        } else {
+            ord
+        };
+
+        // if a point `q` is on the bisector, it will be on the left side, in order to Cq_+ to
+        // intersect with the bisector (Cqr- would not intersect it, because it don't contain `q`
+        // in its domain).
+        if ord == std::cmp::Ordering::Equal {
+            std::cmp::Ordering::Less
         } else {
             ord
         }
