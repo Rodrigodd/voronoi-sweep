@@ -178,10 +178,23 @@ impl Benchline {
     }
 }
 
-/// Fortune algorithm.
+/// Fortune algorithm. Based primarily on the paper "A sweepline algorithm for Voronoi diagrams" by
+/// Steven Fortune, but also referencing the paper "An Efficient Implementation of Fortune's
+/// Plane-Sweep Algorithm for Voronoi Diagrams" by Kenny Wong and Hausi A. Müller.
 ///
-/// Reference:
-/// - S.J. Fortune, A sweepline algorithm for Voronoi diagrams, Algorithmica 2 (1987) 153–174.
+/// I didn't read those papers in their entirety, so I'm not sure if they specify the following:
+/// points, but I needed to introduce them to solve some edge cases:
+/// - The domain of Cqr- are the points to the left of the point `max(q, r)`, *excluding* the point
+/// itself. The domain of Cqr+ are the points to the right of the point `min(q, r)`, *including* the
+/// point itself. Fortune's paper suggests that both boundaries should include the point, and
+/// Wong's paper suggests that both exclude the point, but not very clearly, as far as I read.
+/// - If a point is on the hyperbola, it should be considered on the left side of the hyperbola.
+/// This is needed with the previous point in mind. Fortune's paper says that the decision doesn't
+/// matter, and I didn't read enough of Wong's paper to know if it is specified.
+///
+/// References:
+/// - S.J. Fortune, A sweepline algorithm for Voronoi diagrams, Algorithmica 2 (1987), 153–174.
+/// - Kenny Wong, Hausi A. Müller, An Efficient Implementation of Fortune's Plane-Sweep Algorithm for Voronoi Diagrams
 pub fn fortune_algorithm(
     sites: &[Point],
     on_progress: &mut impl FnMut(&Benchline, &[Event]),
