@@ -994,11 +994,11 @@ async fn main_() {
     let bounds = points
         .iter()
         .copied()
-        .map(|(x, y)| (x, y, x, y))
-        .reduce(|(l, r, t, b), (x, y, _, _)| (l.min(x), r.max(x), t.min(y), b.max(y)))
+        .map(|(x, y)| (x, y, y, x))
+        .reduce(|(l, t, r, b), (x, y, _, _)| (l.min(x), t.min(y), r.max(x), b.max(y)))
         .unwrap();
 
-    let side = (bounds.1 - bounds.0).max(bounds.3 - bounds.2) as f32;
+    let side = (bounds.2 - bounds.0).max(bounds.3 - bounds.1) as f32;
 
     let width = 3.0;
     let height = 3.0;
@@ -1008,7 +1008,7 @@ async fn main_() {
         .map(|(x, y)| Point {
             pos: vec2(
                 width * (x - bounds.0) as f32 / side,
-                height * (y - bounds.2) as f32 / side,
+                height * (y - bounds.1) as f32 / side,
             ),
         })
         .collect::<Vec<_>>();
