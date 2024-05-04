@@ -225,6 +225,11 @@ fn diagram_fuzz4() {
     diagram_fuzz_(vec![(0, 0), (12, 4), (16, 4), (14, 8), (11, 9)])
 }
 
+#[test]
+fn diagram_fuzz5() {
+    diagram_fuzz_(vec![(4, 8), (8, 8), (8, 11), (6, 12)])
+}
+
 fn diagram_fuzz_(mut points: Vec<(u8, u8)>) {
     // remove duplicates
     {

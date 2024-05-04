@@ -594,11 +594,14 @@ impl Bisector {
         // If py = qy, then bisector* is a vertical half-line.
         if p.pos.y == q.pos.y {
             let mx = (p.pos.x + q.pos.x) / 2.0;
+
+            assert!(f32_next_up(mx) > mx);
+
             return Self {
                 a,
                 b,
                 min_x: mx,
-                max_x: mx,
+                max_x: f32_next_up(mx),
             };
         }
 
@@ -773,7 +776,7 @@ impl Bisector {
         let x = nx / d;
         let y = ny / d;
 
-        if x < self.min_x || x > self.max_x || x < other.min_x || x > other.max_x {
+        if x < self.min_x || x >= self.max_x || x < other.min_x || x >= other.max_x {
             return None;
         }
 
@@ -913,6 +916,29 @@ async fn draw_diagram(view: Rect, cells: &[Cell], sites: &[Point]) {
             }
         }
     }
+}
+
+/// From https://github.com/rust-lang/rust/pull/100578
+fn f32_next_up(x: f32) -> f32 {
+    // We must use strictly integer arithmetic to prevent denormals from
+    // flushing to zero after an arithmetic operation on some platforms.
+    const TINY_BITS: u32 = 0x1; // Smallest positive f32.
+    const CLEAR_SIGN_MASK: u32 = 0x7fff_ffff;
+
+    let bits = x.to_bits();
+    if x.is_nan() || bits == f32::INFINITY.to_bits() {
+        return x;
+    }
+
+    let abs = bits & CLEAR_SIGN_MASK;
+    let next_bits = if abs == 0 {
+        TINY_BITS
+    } else if bits == abs {
+        bits + 1
+    } else {
+        bits - 1
+    };
+    f32::from_bits(next_bits)
 }
 
 /// I put the the proc-macro in an wrapper function to workaround it breaking rust-analyzer quick
