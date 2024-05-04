@@ -358,7 +358,7 @@ pub fn fortune_algorithm(
 
                 // Cqs is Cqs+ either if p is to the right of the higher of q and s or if q and s
                 // are cohorizontal; otherwise Cqs is Cqs-.
-                let plus = p.pos.x > q.max(s).pos.x || q.pos.y == s.pos.y;
+                let plus = p.pos.x >= q.max(s).pos.x || q.pos.y == s.pos.y;
                 let cqs = if plus {
                     bqs.c_plus(sites)
                 } else {
