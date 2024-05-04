@@ -287,14 +287,8 @@ pub fn fortune_algorithm(
                         break 'middle;
                     };
 
-                    println!(
-                        "removing: {} {} {} {}",
-                        left_neighbor.a, left_neighbor.b, right_neighbor.a, right_neighbor.b
-                    );
-
                     events.remove(|e| match e {
                         &Event::Intersection(_, (a, b, c)) => {
-                            println!("checking: {} {} {}", a, b, c);
                             let retain = (a == left_neighbor.a || a == left_neighbor.b)
                                 && (b == right_neighbor.a || b == right_neighbor.b)
                                 && (c == right_neighbor.a || c == right_neighbor.b);
@@ -312,10 +306,15 @@ pub fn fortune_algorithm(
                 // 12. Insert into Q the intersection between Cpq- and its neighbor to the left on
                 //     L, if any, and the intersection between Cpq+, and its neighbor to the right,
                 //     if any.
+
                 'left: {
                     let Some(left_neighbor) = benchline.get_left_boundary(reg_q_idx) else {
                         break 'left;
                     };
+
+                    println!("cpq- {:?}", bpq.c_minus(sites));
+                    println!("left neighbor {:?}", left_neighbor);
+
                     let Some(p) = bpq.c_minus(sites).star_intersection(sites, left_neighbor) else {
                         break 'left;
                     };
@@ -331,6 +330,10 @@ pub fn fortune_algorithm(
                     let Some(right_neighbor) = benchline.get_righ_boundary(reg_q_idx + 2) else {
                         break 'right;
                     };
+
+                    println!("cpq+ {:?}", bpq.c_plus(sites));
+                    println!("right neighbor {:?}", right_neighbor);
+
                     let Some(p) = bpq.c_plus(sites).star_intersection(sites, right_neighbor) else {
                         break 'right;
                     };
@@ -418,6 +421,10 @@ pub fn fortune_algorithm(
                     let Some(left_neighbor) = benchline.get_left_boundary(region_r_idx - 1) else {
                         break 'left;
                     };
+
+                    println!("cqs {:?}", cqs);
+                    println!("left neighbor {:?}", left_neighbor);
+
                     let Some(p) = cqs.star_intersection(sites, left_neighbor) else {
                         break 'left;
                     };
@@ -433,6 +440,9 @@ pub fn fortune_algorithm(
                     let Some(right_neighbor) = benchline.get_righ_boundary(region_r_idx) else {
                         break 'right;
                     };
+
+                    println!("right neighbor {:?}", right_neighbor);
+
                     let Some(p) = cqs.star_intersection(sites, right_neighbor) else {
                         break 'right;
                     };
@@ -492,8 +502,13 @@ impl Cell {
     }
 
     /// Add neighbor. Return the index where the neighbor was inserted.
-    fn add_neighbor(&mut self, sites: &[Point], this: SiteIdx, neighbor: SiteIdx) -> usize {
-        let t = sites[this as usize];
+    fn add_neighbor(&mut self, sites: &[Point], this_idx: SiteIdx, neighbor: SiteIdx) -> usize {
+        println!(
+            "{}: adding {:?} to {:?} ({:?})",
+            this_idx, neighbor, self.neighbors, self.points
+        );
+
+        let t = sites[this_idx as usize];
         for i in 0..self.neighbors.len() {
             let a = sites[neighbor as usize];
             let b = sites[self.neighbors[i] as usize];
@@ -529,11 +544,6 @@ impl Cell {
         mut a_idx: SiteIdx,
         mut b_idx: SiteIdx,
     ) {
-        println!(
-            "{}: adding {:?} {:?} to {:?}: {:?}",
-            this_idx, a_idx, b_idx, self.neighbors, point
-        );
-
         // PERF: a and b should be consecutive neighbors, so after we find one we could insert the
         // other with a single extra comparison.
 
@@ -544,6 +554,11 @@ impl Cell {
         if (angle(vb) - angle(va) + TAU) % TAU > TAU * 0.5 {
             std::mem::swap(&mut a_idx, &mut b_idx);
         }
+
+        println!(
+            "{}: adding {:?} {:?} to {:?} ({:?}): {:?}",
+            this_idx, a_idx, b_idx, self.neighbors, self.points, point
+        );
 
         self.add_neighbor(sites, this_idx, b_idx);
         let a_idx = self.add_neighbor(sites, this_idx, a_idx);
@@ -719,8 +734,9 @@ impl Bisector {
         // NOTE: by Cpq+ and Cpq- description, they should have a common point, and therefore these
         // bounds should be inclusive. But that were causing points to intersect at the edges of
         // the bisectors, causing problems. Making the bounds exclusive fixed the problem. Not sure
-        // if this was beign handled in the paper somewhere.
+        // if this was being handled in the paper somewhere.
         if self.min_x >= other.max_x || self.max_x <= other.min_x {
+            println!("out of domain");
             return None;
         }
 
