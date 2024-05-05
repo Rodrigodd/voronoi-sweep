@@ -138,7 +138,7 @@ impl Benchline {
     }
 
     /// Insert a new region within the region at the given index.
-    fn insert(&mut self, region_idx: usize, region: (Bisector, SiteIdx, Bisector)) {
+    fn split3(&mut self, region_idx: usize, region: (Bisector, SiteIdx, Bisector)) {
         let (p, h) = self.regions[region_idx];
 
         let (hl, q, hr) = region;
@@ -148,7 +148,7 @@ impl Benchline {
 
     /// Remove the region at the given index and replace it with the boundary of it neighbor
     /// regions.
-    fn remove(&mut self, region_idx: usize, boundary: Bisector) {
+    fn merge(&mut self, region_idx: usize, boundary: Bisector) {
         self.regions.remove(region_idx);
         self.regions[region_idx - 1].1 = boundary
     }
@@ -287,7 +287,7 @@ pub fn fortune_algorithm(
 
                 // 10. Update list L so that it contains ..., Rq*, Cpq-, Rp*, Cpq+, Rq*, ... in
                 //     place of Rq*.
-                benchline.insert(reg_q_idx, (bpq.c_minus(sites), p_idx, bpq.c_plus(sites)));
+                benchline.split3(reg_q_idx, (bpq.c_minus(sites), p_idx, bpq.c_plus(sites)));
 
                 // 11. Delete from Q the intersection between the left and right boundary of Rq*,
                 //     if any.
@@ -384,7 +384,7 @@ pub fn fortune_algorithm(
                 let cqr = benchline.get_left_boundary(region_r_idx).unwrap();
                 let crs = benchline.get_righ_boundary(region_r_idx).unwrap();
 
-                benchline.remove(region_r_idx, cqs);
+                benchline.merge(region_r_idx, cqs);
 
                 // 17. Delete from Q any intersection between Cqr and its neighbor to the left and between Crs and its neighbor to the right.
                 'left: {
