@@ -195,7 +195,9 @@ fn diagram() {
 fn diagram_fuzz() {
     let mut runner = TestRunner::default();
 
-    let points = proptest::collection::vec((0..5u8, 0..5u8), 0..4);
+    // all representable integers floats
+    let i = -(1 << 23)..(1 << 23);
+    let points = proptest::collection::vec((i.clone(), i), 0..64);
 
     runner
         .run(&points, |points| {
@@ -235,19 +237,21 @@ fn diagram_fuzz6() {
     diagram_fuzz_(vec![(6, 0), (6, 3), (8, 4), (11, 5)])
 }
 
-fn diagram_fuzz_(mut points: Vec<(u8, u8)>) {
-    // remove duplicates
-    {
-        let mut hash = std::collections::HashSet::new();
-        points.retain(|v| hash.insert(*v));
-    }
-
-    let sites = points
+fn diagram_fuzz_(points: Vec<(i32, i32)>) {
+    let mut sites = points
         .into_iter()
         .map(|(x, y)| Point {
             pos: vec2(x as f32, y as f32),
         })
         .collect::<Vec<_>>();
+
+    // remove duplicates
+    {
+        let mut hash = std::collections::HashSet::new();
+        sites.retain(|v| hash.insert(*v));
+    }
+
+    println!("{:?}", sites);
 
     let vertexes = fortune_algorithm(&sites, &mut |_, _| {});
 
