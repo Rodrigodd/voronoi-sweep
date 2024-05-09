@@ -63,6 +63,10 @@ impl<T, F: Fn(&T, &T) -> Ordering> Heap<T, F> {
         self.data.len()
     }
 
+    pub fn find_mut(&mut self, f: impl Fn(&T) -> bool) -> Option<&mut T> {
+        self.data.iter_mut().find(|x| f(*x))
+    }
+
     pub fn remove(&mut self, f: impl Fn(&T) -> bool) -> Option<T> {
         let index = self.data.iter().position(f)?;
         Some(self.remove_at(index))

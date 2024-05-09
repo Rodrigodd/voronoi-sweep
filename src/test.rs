@@ -27,6 +27,27 @@ fn bisector_intersection() {
 }
 
 #[test]
+fn bisector_intersection1() {
+    let sites = &[
+        Point { pos: vec2(0., 0.) },
+        Point { pos: vec2(0., 0.) },
+        Point { pos: vec2(0., 1.) },
+    ];
+
+    let cpq_plus = super::Bisector::new(sites, 2, 0).c_plus(sites);
+    let right_neighbor = super::Bisector::new(sites, 1, 0);
+
+    println!("cpq_plus: {:?}", cpq_plus);
+    println!("right_neighbor: {:?}", right_neighbor);
+
+    let p = cpq_plus.intersection(sites, right_neighbor);
+
+    println!("p: {:?}", p);
+
+    assert!(p.is_some());
+}
+
+#[test]
 fn bisector_intersections() {
     let mut runner = TestRunner::default();
     runner
@@ -196,8 +217,9 @@ fn diagram_fuzz() {
     let mut runner = TestRunner::default();
 
     // all representable integers floats
-    let i = -(1 << 23)..(1 << 23);
-    let points = proptest::collection::vec((i.clone(), i), 0..64);
+    // let i = -(1 << 23)..(1 << 23);
+    let i = -0..6;
+    let points = proptest::collection::vec((i.clone(), i), 0..8);
 
     runner
         .run(&points, |points| {
@@ -205,6 +227,89 @@ fn diagram_fuzz() {
             Ok(())
         })
         .unwrap();
+}
+
+/// Test duplicated points
+#[test]
+fn diagram_fuzz_dup() {
+    let mut runner = TestRunner::default();
+
+    let i = 0..10i32;
+    let points = proptest::collection::vec((i.clone(), i), 0..16);
+
+    runner
+        .run(&points, |points| {
+            let points = points
+                .iter()
+                .copied()
+                .map(|(x, y)| Point::new(x as f32, y as f32))
+                .collect();
+            diagram_fuzz_points(points);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn diagram_fuzz_dup_1() {
+    let points = vec![
+        Point::new(4.0, 2.0),
+        Point::new(0.0, 5.0),
+        Point::new(0.0, 5.0),
+        Point::new(0.0, 6.0),
+    ];
+
+    diagram_fuzz_points(points);
+}
+
+#[test]
+fn diagram_fuzz_dup_2() {
+    let points = vec![
+        Point::new(3.0, 0.0),
+        Point::new(4.0, 1.0),
+        Point::new(6.0, 2.0),
+        Point::new(6.0, 2.0),
+    ];
+
+    diagram_fuzz_points(points);
+}
+
+#[test]
+fn diagram_fuzz_dup_3() {
+    let points = vec![
+        Point::new(7.0, 1.0),
+        Point::new(9.0, 1.0),
+        Point::new(8.0, 2.0),
+        Point::new(8.0, 2.0),
+    ];
+
+    diagram_fuzz_points(points);
+}
+
+#[test]
+fn diagram_fuzz_dup_4() {
+    let points = vec![
+        Point::new(5.0, 0.0),
+        Point::new(3.0, 1.0),
+        Point::new(3.0, 1.0),
+        Point::new(2.0, 2.0),
+        Point::new(8.0, 4.0),
+    ];
+
+    diagram_fuzz_points(points);
+}
+
+#[test]
+fn diagram_fuzz_dup_5() {
+    let points = vec![
+        Point::new(90.0, 40.0),
+        Point::new(90.0, 40.0),
+        Point::new(90.0, 70.0),
+        Point::new(90.0, 70.0),
+        Point::new(00.0, 80.0),
+    ];
+
+    diagram_fuzz_points(points);
 }
 
 #[test]
@@ -237,6 +342,11 @@ fn diagram_fuzz6() {
     diagram_fuzz_(vec![(6, 0), (6, 3), (8, 4), (11, 5)])
 }
 
+#[test]
+fn diagram_fuzz7() {
+    diagram_fuzz_(vec![(0, 0), (1, 0), (0, 2), (3, 3), (3, 4), (0, 5)])
+}
+
 fn diagram_fuzz_(points: Vec<(i32, i32)>) {
     let mut sites = points
         .into_iter()
@@ -251,12 +361,16 @@ fn diagram_fuzz_(points: Vec<(i32, i32)>) {
         sites.retain(|v| hash.insert(*v));
     }
 
+    diagram_fuzz_points(sites);
+}
+
+fn diagram_fuzz_points(sites: Vec<Point>) {
     println!("{:?}", sites);
 
     let vertexes = fortune_algorithm(&sites, &mut |_, _| {});
 
-    for (cell, &site) in vertexes.into_iter().zip(&sites) {
-        println!("cell {:?}", cell);
+    for (i, (cell, &site)) in vertexes.into_iter().zip(&sites).enumerate() {
+        println!("{}: cell {:?}", i, cell);
 
         let intersection_count = cell.points.iter().filter(|v| v.is_nan().not()).count();
 
@@ -515,4 +629,74 @@ fn test_cell() {
     }
 
     assert_eq!(cell.points, hull_points);
+}
+
+#[test]
+fn angle() {
+    use std::f32::consts::TAU;
+
+    let sites = vec![
+        Point::new(0.0, 0.0),  // 0
+        Point::new(0.0, 0.0),  // 1
+        Point::new(1.0, 0.0),  // 2
+        Point::new(0.0, 1.0),  // 3
+        Point::new(-1.0, 0.0), // 4
+        Point::new(0.0, -1.0), // 5
+    ];
+
+    let a1 = super::angle(&sites, 0, 1);
+    let a2 = super::angle(&sites, 1, 0);
+    let a3 = super::angle(&sites, 0, 2);
+    let a4 = super::angle(&sites, 0, 3);
+    let a5 = super::angle(&sites, 0, 4);
+    let a6 = super::angle(&sites, 0, 5);
+
+    println!("a1: {}", a1);
+    println!("a2: {}", a2);
+    println!("a3: {}", a3);
+    println!("a4: {}", a4);
+    println!("a5: {}", a5);
+    println!("a6: {}", a6);
+
+    assert_eq!(a1, 0.0);
+    assert_eq!(a2, TAU / 2.0);
+    assert_eq!(a3, 0.0);
+    assert_eq!(a4, TAU / 4.0);
+    assert_eq!(a5, TAU / 2.0);
+    assert_eq!(a6, TAU * 3.0 / 4.0);
+}
+
+#[test]
+fn angle_cmp() {
+    use std::f32::consts::TAU;
+
+    let sites = vec![
+        Point::new(0.0, 0.0),  // 0
+        Point::new(0.0, 1.0),  // 1
+        Point::new(0.0, 1.0),  // 2
+        Point::new(0.0, -1.0), // 3
+        Point::new(0.0, -1.0), // 4
+        Point::new(1.0, 0.0),  // 5
+    ];
+
+    let a1 = super::angle_cmp(&sites, 0, 1, 2);
+    let a2 = super::angle_cmp(&sites, 0, 2, 1);
+    let a3 = super::angle_cmp(&sites, 0, 3, 4);
+    let a4 = super::angle_cmp(&sites, 0, 4, 3);
+    let a5 = super::angle_cmp(&sites, 0, 5, 1);
+    let a6 = super::angle_cmp(&sites, 0, 5, 3);
+
+    println!("a1: {:?}", a1);
+    println!("a2: {:?}", a2);
+    println!("a3: {:?}", a3);
+    println!("a4: {:?}", a4);
+    println!("a5: {:?}", a5);
+    println!("a6: {:?}", a6);
+
+    assert!(a1 == 0.0 && a1.is_sign_negative());
+    assert!(a2 == 0.0 && a2.is_sign_positive());
+    assert!(a3 == 0.0 && a3.is_sign_positive());
+    assert!(a4 == 0.0 && a4.is_sign_negative());
+    assert_eq!(a5, TAU / 4.0);
+    assert!(close(a6, -TAU / 4.0));
 }

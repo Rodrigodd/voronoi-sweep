@@ -19,6 +19,10 @@ impl Point {
         pos: vec2(f32::NAN, f32::NAN),
     };
 
+    pub fn new(x: f32, y: f32) -> Self {
+        Self { pos: vec2(x, y) }
+    }
+
     /// Check if both coordinates are NaN.
     fn is_nan(&self) -> bool {
         self.pos.x.is_nan() && self.pos.y.is_nan()
@@ -77,6 +81,15 @@ pub struct Benchline {
     /// Vec.
     regions: Vec<(SiteIdx, Bisector)>,
 }
+impl std::fmt::Debug for Benchline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.regions[0..self.regions.len() - 1]
+            .iter()
+            .fold(&mut f.debug_list(), |f, (p, b)| f.entry(&p).entry(&b))
+            .entry(&self.regions.last().unwrap().0)
+            .finish()
+    }
+}
 impl Benchline {
     fn new(first_region: SiteIdx) -> Self {
         Self {
@@ -123,7 +136,7 @@ impl Benchline {
 
     /// Find the index of region `r`, whose neighbors are `q` and `s`.
     fn find_region3(&self, q: SiteIdx, r: SiteIdx, s: SiteIdx) -> usize {
-        // println!("find_region3 {:?} {:?} {:?}", q, r, s);
+        println!("find_region3 {:?} {:?} {:?}", q, r, s);
         // for (r, b) in self.regions.iter() {
         //     println!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
         // }
@@ -135,6 +148,21 @@ impl Benchline {
         }
 
         unreachable!()
+    }
+
+    /// Insert a new region at the exactly right of the region at the given index.
+    fn split2(&mut self, region_idx: usize, region: (Bisector, SiteIdx)) {
+        let (p, mut h) = self.regions[region_idx];
+        let (hl, q) = region;
+
+        if h.a == p {
+            h.a = q;
+        } else {
+            h.b = q;
+        }
+
+        self.regions
+            .splice(region_idx..=region_idx, [(p, hl), (q, h)]);
     }
 
     /// Insert a new region within the region at the given index.
@@ -224,7 +252,18 @@ pub fn fortune_algorithm(
             Event::Site(p) => sites[*p as usize],
             Event::Intersection(p, _) => *p,
         };
-        pa.cmp(&pb)
+        let ord = pa.cmp(&pb);
+
+        if ord == std::cmp::Ordering::Equal {
+            return match (a, b) {
+                (Event::Site(a), Event::Site(b)) => a.cmp(b),
+                (Event::Site(_), Event::Intersection(_, _)) => std::cmp::Ordering::Less,
+                (Event::Intersection(_, _), Event::Site(_)) => std::cmp::Ordering::Greater,
+                (Event::Intersection(pa, _), Event::Intersection(pb, _)) => pa.cmp(pb),
+            };
+        }
+
+        ord
     });
 
     for site in 0..sites.len() {
@@ -259,21 +298,18 @@ pub fn fortune_algorithm(
         vertices[p as usize].add_neighbor(sites, p, q);
         vertices[q as usize].add_neighbor(sites, q, p);
     }
-    println!("initial benchline: {:?}", benchline.regions);
+    println!("initial benchline: {:?}", benchline);
 
     on_progress(&benchline, events.as_slice());
 
     // 4. while Q is not empty begin
     // 5. p <- extract min(Q)
     while let Some(event) = events.pop() {
-        println!(
-            "event {:?} of {:?} in {:?}",
-            event, events, benchline.regions
-        );
+        println!("event {:?} of {:?} in {:?}", event, events, benchline);
         // 6. case
         match event {
             // 7. p is a site:
-            Event::Site(p_idx) => {
+            Event::Site(p_idx) => 'site: {
                 let p = sites[p_idx as usize];
                 // 8. Find an occurrence of a region Rq* on L containing p.
                 let reg_q_idx = benchline.find_region(sites, p);
@@ -281,6 +317,61 @@ pub fn fortune_algorithm(
 
                 vertices[p_idx as usize].add_neighbor(sites, p_idx, q_idx);
                 vertices[q_idx as usize].add_neighbor(sites, q_idx, p_idx);
+
+                // (added) 8.1. If p and q coincide, consider them to be side by side, adding a
+                //              vertical boundary between them. ..., Rq*, Cpq0, Rp*, Cpr, ... in
+                //              place of Rq*, Cqr.
+                if sites[p_idx as usize] == sites[q_idx as usize] {
+                    println!("duplicated points!!");
+                    let bpq = Bisector::new(sites, p_idx, q_idx);
+
+                    let cqr = benchline.get_righ_boundary(reg_q_idx).unwrap();
+                    benchline.split2(reg_q_idx, (bpq, p_idx));
+
+                    // 8.2. Add vertex for p, q and the surrounding region
+                    let r = benchline.get_region(reg_q_idx + 2);
+                    let vy = Bisector::new(sites, p_idx, r).y_at(sites, p.pos.x);
+                    let v = Point::new(p.pos.x, vy);
+                    println!("vertex {} {} {}: {:?}", p_idx, q_idx, r, v);
+                    vertices[p_idx as usize].add_vertex(sites, v, p_idx, q_idx, r);
+                    vertices[q_idx as usize].add_vertex(sites, v, q_idx, p_idx, r);
+                    vertices[r as usize].add_vertex(sites, v, r, p_idx, q_idx);
+
+                    // 8.3: Replace from Q the intersection between Cqr+ and its neighbor to the
+                    //      right, with the intersection between Cpr+ and its neighbor to the right
+                    //      (will be at the same point).
+                    'right: {
+                        let Some(right_neighbor) = benchline.get_righ_boundary(reg_q_idx + 2)
+                        else {
+                            break 'right;
+                        };
+
+                        println!("cqr   {:?}", cqr);
+                        println!("right neighbor {:?}", right_neighbor);
+
+                        if let Some(Event::Intersection(p, (a, b, c))) =
+                            events.find_mut(|e| match e {
+                                &Event::Intersection(_, (a, b, c)) => {
+                                    let found = (a == cqr.a || a == cqr.b)
+                                        && (b == cqr.a || b == cqr.b)
+                                        && (c == right_neighbor.a || c == right_neighbor.b);
+
+                                    if found {
+                                        println!("removing {:?}", e);
+                                    }
+
+                                    found
+                                }
+                                _ => false,
+                            })
+                        {
+                            *a = p_idx;
+                            println!("replaced with {:?}", (p, (a, b, c)));
+                        }
+                    }
+
+                    break 'site;
+                }
 
                 // 9. Create bisector Bpq*.
                 let bpq = Bisector::new(sites, p_idx, q_idx);
@@ -375,10 +466,20 @@ pub fn fortune_algorithm(
                 // Cqs is Cqs+ either if p is to the right of the higher of q and s or if q and s
                 // are cohorizontal; otherwise Cqs is Cqs-.
                 let plus = p.pos.x >= q.max(s).pos.x || q.pos.y == s.pos.y;
-                let cqs = if plus {
-                    bqs.c_plus(sites)
+                let cqs = if q.pos.y == s.pos.y {
+                    bqs // cqs0
+                } else if plus {
+                    // cqs+
+                    Bisector {
+                        min_x: p.pos.x,
+                        ..bqs
+                    }
                 } else {
-                    bqs.c_minus(sites)
+                    // cqs-
+                    Bisector {
+                        max_x: p.pos.x,
+                        ..bqs
+                    }
                 };
 
                 let cqr = benchline.get_left_boundary(region_r_idx).unwrap();
@@ -391,6 +492,9 @@ pub fn fortune_algorithm(
                     let Some(left_neighbor) = benchline.get_left_boundary(region_r_idx - 1) else {
                         break 'left;
                     };
+
+                    println!("cqr {:?}", cqr);
+                    println!("left neighbor {:?}", left_neighbor);
 
                     events.remove(|e| match e {
                         &Event::Intersection(_, (a, b, c)) => {
@@ -412,6 +516,9 @@ pub fn fortune_algorithm(
                     let Some(right_neighbor) = benchline.get_righ_boundary(region_r_idx) else {
                         break 'right;
                     };
+
+                    println!("crs {:?}", crs);
+                    println!("right neighbor {:?}", right_neighbor);
 
                     events.remove(|e| match e {
                         &Event::Intersection(_, (a, b, c)) => {
@@ -438,15 +545,20 @@ pub fn fortune_algorithm(
                     println!("cqs {:?}", cqs);
                     println!("left neighbor {:?}", left_neighbor);
 
-                    let Some(p) = cqs.star_intersection(sites, left_neighbor) else {
+                    let Some(i) = cqs.star_intersection(sites, left_neighbor) else {
                         break 'left;
                     };
+
+                    //
+                    if i.pos.x == p.pos.x {
+                        break 'left;
+                    }
 
                     let q = benchline.get_region(region_r_idx - 2);
                     let r = benchline.get_region(region_r_idx - 1);
                     let s = benchline.get_region(region_r_idx);
-                    events.push(Event::Intersection(p, (q, r, s)));
-                    println!("il intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
+                    events.push(Event::Intersection(i, (q, r, s)));
+                    println!("il intersection {:?}, ({:?}, {:?}, {:?})", i, q, r, s);
                 }
 
                 'right: {
@@ -469,6 +581,8 @@ pub fn fortune_algorithm(
 
                 // 19. Mark p as a vertex and as an endpoint of Bqr*, Brs*, and Bqs*.
                 let p_unstar = circumcenter(q, r, s);
+                println!("circuncenter of {:?} {:?} {:?}: {:?}", q, r, s, p_unstar);
+                println!("vertex {} {} {}: {:?}", q_idx, r_idx, s_idx, p_unstar);
                 vertices[q_idx as usize].add_vertex(sites, p_unstar, q_idx, r_idx, s_idx);
                 vertices[r_idx as usize].add_vertex(sites, p_unstar, r_idx, q_idx, s_idx);
                 vertices[s_idx as usize].add_vertex(sites, p_unstar, s_idx, q_idx, r_idx);
@@ -481,14 +595,68 @@ pub fn fortune_algorithm(
     vertices
 }
 
-/// Angle of this vector in relation to the x-axis, in the range [0, τ).
-fn angle(a: Vec2) -> f32 {
-    let x = a.y.atan2(a.x);
+/// Angle of this vector (b-a) in relation to the x-axis, in the range [0, τ).
+fn angle(sites: &[Point], a_idx: SiteIdx, b_idx: SiteIdx) -> f32 {
+    let dx = sites[b_idx as usize].pos.x - sites[a_idx as usize].pos.x;
+    let dy = sites[b_idx as usize].pos.y - sites[a_idx as usize].pos.y;
+
+    // if the points are coincident, consider they side by side.
+    if dx == 0.0 && dy == 0.0 {
+        if a_idx < b_idx {
+            return 0.0;
+        } else {
+            return TAU / 2.0;
+        }
+    }
+
+    let x = dy.atan2(dx);
+
     if x < 0.0 {
         x + TAU
     } else {
         x
     }
+}
+
+/// Return the angle between the vectors `o->a` and `o->b`, in the range [-π, π). Is positive if the
+/// smallest rotation from `o->a` to `o->b` is in the orientation of `x` to `y`.
+///
+/// if `a` and `b` are coincident, the one with the smaller index is considered to be to the left
+/// of the other, and +0.0 or -0.0 is returned accordingly.
+fn angle_cmp(sites: &[Point], o: SiteIdx, a: SiteIdx, b: SiteIdx) -> f32 {
+    debug_assert!(a != b);
+
+    let angle_a = angle(sites, o, a);
+    let angle_b = angle(sites, o, b);
+
+    println!(
+        "{}: angle_cmp {:?} {:?} {:?} {:?} {:?}",
+        o,
+        a,
+        b,
+        angle_a,
+        angle_b,
+        angle_b - angle_a
+    );
+
+    let mut theta = angle_b - angle_a;
+
+    if theta > TAU / 2.0 {
+        theta -= TAU;
+    } else if theta <= -TAU / 2.0 {
+        theta += TAU;
+    }
+
+    // if points are equal, consider that the point with smaller index is to the left of the
+    // other.
+    if theta == 0.0 {
+        if sites[a as usize].pos.y > sites[o as usize].pos.y {
+            theta = [0.0, -0.0][(b > a) as usize];
+        } else {
+            theta = [0.0, -0.0][(b < a) as usize];
+        }
+    }
+    theta
 }
 
 // A cell of the voronoi diagram. Contains a list of neighbors and points.
@@ -516,24 +684,32 @@ impl Cell {
 
     /// Add neighbor. Return the index where the neighbor was inserted.
     fn add_neighbor(&mut self, sites: &[Point], this_idx: SiteIdx, neighbor: SiteIdx) -> usize {
+        let angle_a = angle(sites, this_idx, neighbor);
+
         println!(
-            "{}: adding {:?} to {:?} ({:?})",
-            this_idx, neighbor, self.neighbors, self.points
+            "{}: adding {:?} ({:.0}) to {:?} ({:?})",
+            this_idx,
+            neighbor,
+            angle_a * 360.0 / TAU,
+            self.neighbors,
+            self.points
         );
 
-        let t = sites[this_idx as usize];
         for i in 0..self.neighbors.len() {
-            let a = sites[neighbor as usize];
-            let b = sites[self.neighbors[i] as usize];
-
-            if a == b {
+            if neighbor == self.neighbors[i] {
                 return i;
             }
 
-            let angle_a = angle(a.pos - t.pos);
-            let angle_b = angle(b.pos - t.pos);
+            let b_idx = self.neighbors[i];
+            let angle_b = angle(sites, this_idx, b_idx);
 
-            if angle_a < angle_b {
+            let mut theta = angle_a - angle_b;
+
+            if angle_a == angle_b {
+                theta = angle_cmp(sites, this_idx, neighbor, b_idx);
+            }
+
+            if theta.is_sign_negative() {
                 self.neighbors.insert(i, neighbor);
                 self.points.insert(i, Point::NAN);
                 return i;
@@ -557,14 +733,14 @@ impl Cell {
         mut a_idx: SiteIdx,
         mut b_idx: SiteIdx,
     ) {
+        debug_assert!(!point.pos.x.is_nan());
+        debug_assert!(!point.pos.y.is_nan());
         // PERF: a and b should be consecutive neighbors, so after we find one we could insert the
         // other with a single extra comparison.
 
-        let t = sites[this_idx as usize].pos;
-        let va = sites[a_idx as usize].pos - t;
-        let vb = sites[b_idx as usize].pos - t;
+        let theta = angle_cmp(sites, this_idx, a_idx, b_idx);
 
-        if (angle(vb) - angle(va) + TAU) % TAU > TAU * 0.5 {
+        if theta.is_sign_negative() {
             std::mem::swap(&mut a_idx, &mut b_idx);
         }
 
@@ -574,10 +750,15 @@ impl Cell {
         );
 
         self.add_neighbor(sites, this_idx, b_idx);
-        let a_idx = self.add_neighbor(sites, this_idx, a_idx);
+        let i = self.add_neighbor(sites, this_idx, a_idx);
 
-        debug_assert!(self.points[a_idx].is_nan());
-        self.points[a_idx] = point;
+        debug_assert!(self.points[i].is_nan());
+        self.points[i] = point;
+
+        println!(
+            "{}: added  {:?} {:?} to {:?} ({:?}): {:?}",
+            this_idx, a_idx, b_idx, self.neighbors, self.points, point
+        );
     }
 }
 
@@ -615,6 +796,8 @@ impl Bisector {
 
     fn new(sites: &[Point], mut a: SiteIdx, mut b: SiteIdx) -> Self {
         let (p, q) = (sites[a as usize], sites[b as usize]);
+
+        // PERF: maybe the caller can ensure this is true?
         if p < q {
             std::mem::swap(&mut a, &mut b);
         }
@@ -678,17 +861,7 @@ impl Bisector {
     /// The y value of the line bisector at x.
     fn y_at(&self, sites: &[Point], x: f32) -> f32 {
         let (a, b) = self.ab(sites);
-
-        let x = x - a.pos.x;
-        let dx = b.pos.x - a.pos.x;
-        let dy = b.pos.y - a.pos.y;
-
-        let dx2 = dx * dx;
-        let dy2 = dy * dy;
-
-        a.pos.y + (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy)
-        // 1 + (1 + 2*0.5 + 1) / (-2*1)
-        // 1 + (1 + 1 + 1) / -2 = 1 - 1.5 = -0.5
+        line_equation(x, a.pos.x, a.pos.y, b.pos.x, b.pos.y)
     }
 
     /// The y value of the hyperbola "bisector*" at x.
@@ -715,24 +888,35 @@ impl Bisector {
     fn star_cmp(&self, sites: &[Point], point: Point) -> std::cmp::Ordering {
         let (a, b) = self.ab(sites);
 
-        if point.pos.x <= self.min_x {
+        if point.pos.x < self.min_x {
+            println!("less! {} {}", point.pos.x, self.min_x);
             return std::cmp::Ordering::Less;
         }
-        if point.pos.x > self.max_x {
+        if point.pos.x >= self.max_x {
+            println!("great! {} {}", point.pos.x, self.max_x);
             return std::cmp::Ordering::Greater;
         }
 
         if (b.pos.y - a.pos.y) == 0.0 {
+            println!("equal! {} {}", point.pos.x, a.pos.x);
             // the bisector is a vertical line segment
-            return point.pos.x.partial_cmp(&a.pos.x).unwrap();
+            return point
+                .pos
+                .x
+                .partial_cmp(&a.pos.x)
+                .unwrap()
+                // same reasoning below
+                .then(std::cmp::Ordering::Less);
         }
 
         let bisector_star_y = self.y_star_at(sites, point.pos.x);
 
+        println!("{} <=> {}", point.pos.y, bisector_star_y);
+
         let ord = point.pos.y.partial_cmp(&bisector_star_y).unwrap();
 
         // if this is the right half of the hyperbola, above y means left side.
-        let ord = if self.min_x == a.pos.x {
+        let ord = if self.min_x >= a.pos.x {
             ord.reverse()
         } else {
             ord
@@ -741,11 +925,7 @@ impl Bisector {
         // if a point `q` is on the bisector, it will be on the left side, in order to Cq_+ to
         // intersect with the bisector (Cqr- would not intersect it, because it don't contain `q`
         // in its domain).
-        if ord == std::cmp::Ordering::Equal {
-            std::cmp::Ordering::Less
-        } else {
-            ord
-        }
+        ord.then(std::cmp::Ordering::Less)
     }
 
     /// Returns the intersection point of two bisectors.
@@ -753,10 +933,6 @@ impl Bisector {
         let (a, b) = self.ab(sites);
         let (oa, ob) = other.ab(sites);
 
-        // NOTE: by Cpq+ and Cpq- description, they should have a common point, and therefore these
-        // bounds should be inclusive. But that were causing points to intersect at the edges of
-        // the bisectors, causing problems. Making the bounds exclusive fixed the problem. Not sure
-        // if this was being handled in the paper somewhere.
         if self.min_x >= other.max_x || self.max_x <= other.min_x {
             println!("out of domain");
             return None;
@@ -767,10 +943,26 @@ impl Bisector {
         let qx = b.pos.x;
         let qy = b.pos.y;
 
+        // py=qy: vertical boundary
+        if py == qy {
+            println!("vertical 1!");
+            let x = (px + qx) / 2.0;
+            let y = other.y_at(sites, x);
+            return Some(Point { pos: vec2(x, y) });
+        }
+
         let rx = oa.pos.x;
         let ry = oa.pos.y;
         let sx = ob.pos.x;
         let sy = ob.pos.y;
+
+        // ry=sy: vertical boundary
+        if ry == sy {
+            println!("vertical 2!");
+            let x = (rx + sx) / 2.0;
+            let y = self.y_at(sites, x);
+            return Some(Point { pos: vec2(x, y) });
+        }
 
         let px2 = px * px;
         let py2 = py * py;
@@ -787,6 +979,7 @@ impl Bisector {
             - 2.0 * qy * sx;
 
         if d == 0.0 {
+            println!("divided by zero!");
             return None;
         }
 
@@ -815,6 +1008,10 @@ impl Bisector {
         let y = ny / d;
 
         if x < self.min_x || x >= self.max_x || x < other.min_x || x >= other.max_x {
+            println!(
+                "out of domain 2, {} {} {} {} {}",
+                x, self.min_x, self.max_x, other.min_x, other.max_x
+            );
             return None;
         }
 
@@ -831,6 +1028,19 @@ impl Bisector {
     fn ab(&self, sites: &[Point]) -> (Point, Point) {
         (sites[self.a as usize], sites[self.b as usize])
     }
+}
+
+fn line_equation(x: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
+    let x = x - ax;
+    let dx = bx - ax;
+    let dy = by - ay;
+
+    dbg!(x, dx, dy);
+
+    let dx2 = dx * dx;
+    let dy2 = dy * dy;
+
+    ay + (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy)
 }
 
 fn dist(a: Point, b: Point) -> f32 {
@@ -856,6 +1066,23 @@ fn circumcenter(a: Point, b: Point, c: Point) -> Point {
         * (a.pos.x * (b.pos.y - c.pos.y)
             + b.pos.x * (c.pos.y - a.pos.y)
             + c.pos.x * (a.pos.y - b.pos.y));
+
+    if d == 0.0 {
+        // assume the two points that are coincident are horizotally side by side.
+        let (a, b) = if a == b {
+            (a, c)
+        } else if a == c {
+            (a, b)
+        } else {
+            (c, a)
+        };
+
+        let y = line_equation(a.pos.x, a.pos.x, a.pos.y, b.pos.x, b.pos.y);
+
+        return Point {
+            pos: vec2(a.pos.x, y),
+        };
+    }
 
     let ux = (a.pos.x * a.pos.x + a.pos.y * a.pos.y) * (b.pos.y - c.pos.y)
         + (b.pos.x * b.pos.x + b.pos.y * b.pos.y) * (c.pos.y - a.pos.y)
@@ -1010,8 +1237,8 @@ async fn main_() {
         points.dedup();
     }
 
-    let points = [(0, 0), (12, 4), (16, 4), (14, 8), (11, 9)];
-    // let points = [(0, 0), (12, 4), (16, 4), (14, 8), (11, 9)];
+    // let points = [(4, 8), (8, 8), (8, 11), (6, 12)];
+    let points = [(900, 400), (910, 400), (900, 700), (910, 700), (0, 800)];
 
     let bounds = points
         .iter()
