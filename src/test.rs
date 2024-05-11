@@ -1,6 +1,6 @@
 use std::ops::Not;
 
-use super::{circumcenter, dist, fortune_algorithm, vec2, Bisector, Cell, Point, SiteIdx};
+use super::{circumcenter, debugln, dist, fortune_algorithm, vec2, Bisector, Cell, Point, SiteIdx};
 use proptest::prelude::*;
 use proptest::test_runner::TestRunner;
 use rand::{seq::SliceRandom, Rng};
@@ -37,12 +37,12 @@ fn bisector_intersection1() {
     let cpq_plus = super::Bisector::new(sites, 2, 0).c_plus(sites);
     let right_neighbor = super::Bisector::new(sites, 1, 0);
 
-    println!("cpq_plus: {:?}", cpq_plus);
-    println!("right_neighbor: {:?}", right_neighbor);
+    debugln!("cpq_plus: {:?}", cpq_plus);
+    debugln!("right_neighbor: {:?}", right_neighbor);
 
     let p = cpq_plus.intersection(sites, right_neighbor);
 
-    println!("p: {:?}", p);
+    debugln!("p: {:?}", p);
 
     assert!(p.is_some());
 }
@@ -84,13 +84,13 @@ fn bisector_intersections_(a: (u8, u8), b: (u8, u8), c: (u8, u8), d: (u8, u8)) -
     let ab = super::Bisector::new(sites, 0, 1);
     let cd = super::Bisector::new(sites, 2, 3);
 
-    println!("ab: {:?}, cd: {:?}", ab, cd);
+    debugln!("ab: {:?}, cd: {:?}", ab, cd);
 
     let Some(p) = ab.intersection(sites, cd) else {
         return true;
     };
 
-    println!("p: {:?}", p);
+    debugln!("p: {:?}", p);
 
     let da = dist(a, p);
     let db = dist(b, p);
@@ -102,7 +102,7 @@ fn bisector_intersections_(a: (u8, u8), b: (u8, u8), c: (u8, u8), d: (u8, u8)) -
         return true;
     }
 
-    println!("da: {}, db: {}, dc: {}, dd: {}", da, db, dc, dd);
+    debugln!("da: {}, db: {}, dc: {}, dd: {}", da, db, dc, dd);
 
     close(da, db) && close(dc, dd)
 }
@@ -140,7 +140,7 @@ fn bisector_cmp1() {
 
     let y = bpq.y_star_at(sites, r.pos.x);
 
-    println!("y: {}", y);
+    debugln!("y: {}", y);
 
     assert_eq!(bpq.star_cmp(sites, r), std::cmp::Ordering::Greater);
 }
@@ -189,13 +189,13 @@ fn diagram() {
 
     let vertexes = fortune_algorithm(&points, &mut |benchline, _| {
         let regions = benchline.get_regions().collect::<Vec<_>>();
-        println!("regions: {:?}", regions);
+        debugln!("regions: {:?}", regions);
         assert_eq!(regions, expected_benchline[0]);
         expected_benchline = &expected_benchline[1..];
     });
 
     for cell in vertexes.into_iter() {
-        println!("cell {:?}", cell);
+        debugln!("cell {:?}", cell);
 
         let points: Vec<Point> = cell
             .points
@@ -206,7 +206,7 @@ fn diagram() {
         assert_eq!(cell.neighbors.len(), 2);
         assert_eq!(points.len(), 1);
 
-        println!("points: {:?}", points);
+        debugln!("points: {:?}", points);
 
         assert_eq!(points[0], intersection);
     }
@@ -424,12 +424,12 @@ fn diagram_fuzz_(points: Vec<(i32, i32)>) {
 }
 
 fn diagram_fuzz_points(sites: Vec<Point>) {
-    println!("{:?}", sites);
+    debugln!("{:?}", sites);
 
     let vertexes = fortune_algorithm(&sites, &mut |_, _| {});
 
     for (i, (cell, &site)) in vertexes.into_iter().zip(&sites).enumerate() {
-        println!("{}: cell {:?}", i, cell);
+        debugln!("{}: cell {:?}", i, cell);
 
         let intersection_count = cell.points.iter().filter(|v| v.is_nan().not()).count();
 
@@ -450,7 +450,7 @@ fn diagram_fuzz_points(sites: Vec<Point>) {
             let dist_p = dist(p, site);
             let dist_neigh = dist(p, sites[neigh as usize]);
 
-            println!("dist_p: {}, dist_neigh: {}", dist_p, dist_neigh);
+            debugln!("dist_p: {}, dist_neigh: {}", dist_p, dist_neigh);
 
             assert!(close(dist_p, dist_neigh));
         }
@@ -484,20 +484,20 @@ fn diagram1() {
 
     let vertexes = fortune_algorithm(&points, &mut |benchline, _| {
         let regions = benchline.get_regions().collect::<Vec<_>>();
-        println!("regions: {:?}", regions);
+        debugln!("regions: {:?}", regions);
         if regions != expected_benchline[0] {
-            println!("expecte: {:?}", expected_benchline[0]);
+            debugln!("expecte: {:?}", expected_benchline[0]);
         }
         assert_eq!(regions, expected_benchline[0]);
         expected_benchline = &expected_benchline[1..];
     });
 
-    println!("expected_benchline: {:?}", expected_benchline);
+    debugln!("expected_benchline: {:?}", expected_benchline);
     assert!(expected_benchline.is_empty());
     assert_eq!(vertexes.len(), points.len());
 
     for (cell, &site) in vertexes.into_iter().zip(&points) {
-        println!("cell {:?}", cell);
+        debugln!("cell {:?}", cell);
 
         let intersection_count = cell.points.iter().filter(|v| v.is_nan().not()).count();
 
@@ -515,7 +515,7 @@ fn diagram1() {
             let dist_p = dist(p, site);
             let dist_neigh = dist(p, points[neigh as usize]);
 
-            println!("dist_p: {}, dist_neigh: {}", dist_p, dist_neigh);
+            debugln!("dist_p: {}, dist_neigh: {}", dist_p, dist_neigh);
 
             assert!(close(dist_p, dist_neigh));
         }
@@ -549,7 +549,7 @@ fn bisector_y_at(a: (u8, u8), b: (u8, u8)) -> bool {
 
     let y_at = bisector.y_at(sites, mean.x);
 
-    println!("a: {:?}, b: {:?}, mean: {}, y_at: {}", a, b, mean, y_at);
+    debugln!("a: {:?}, b: {:?}, mean: {}, y_at: {}", a, b, mean, y_at);
 
     close(y_at, mean.y)
 }
@@ -569,7 +569,7 @@ fn bisector_y_at1() {
 
     let y_at = bisector.y_at(sites, 0.5);
 
-    println!("y_at: {}", y_at);
+    debugln!("y_at: {}", y_at);
 
     assert!(close(y_at, 0.5))
 }
@@ -592,7 +592,7 @@ fn y_star_at() {
 
     let y_star = bpq.y_star_at(sites, r.pos.x);
 
-    println!("y_star: {}", y_star);
+    debugln!("y_star: {}", y_star);
 
     assert!(close(y_star, 2.0));
 }
@@ -632,7 +632,7 @@ fn test_circumcenter(a: (u8, u8), b: (u8, u8), c: (u8, u8)) {
     let r2 = dist(cc, b);
     let r3 = dist(cc, c);
 
-    println!("r1: {}, r2: {}, r3: {}", r1, r2, r3);
+    debugln!("r1: {}, r2: {}, r3: {}", r1, r2, r3);
 
     assert!(close(r1, r2));
     assert!(close(r1, r3));
@@ -710,12 +710,12 @@ fn angle() {
     let a5 = super::angle(&sites, 0, 4);
     let a6 = super::angle(&sites, 0, 5);
 
-    println!("a1: {}", a1);
-    println!("a2: {}", a2);
-    println!("a3: {}", a3);
-    println!("a4: {}", a4);
-    println!("a5: {}", a5);
-    println!("a6: {}", a6);
+    debugln!("a1: {}", a1);
+    debugln!("a2: {}", a2);
+    debugln!("a3: {}", a3);
+    debugln!("a4: {}", a4);
+    debugln!("a5: {}", a5);
+    debugln!("a6: {}", a6);
 
     assert_eq!(a1, 0.0);
     assert_eq!(a2, TAU / 2.0);
@@ -745,12 +745,12 @@ fn angle_cmp() {
     let a5 = super::angle_cmp(&sites, 0, 5, 1);
     let a6 = super::angle_cmp(&sites, 0, 5, 3);
 
-    println!("a1: {:?}", a1);
-    println!("a2: {:?}", a2);
-    println!("a3: {:?}", a3);
-    println!("a4: {:?}", a4);
-    println!("a5: {:?}", a5);
-    println!("a6: {:?}", a6);
+    debugln!("a1: {:?}", a1);
+    debugln!("a2: {:?}", a2);
+    debugln!("a3: {:?}", a3);
+    debugln!("a4: {:?}", a4);
+    debugln!("a5: {:?}", a5);
+    debugln!("a6: {:?}", a6);
 
     assert!(a1 == 0.0 && a1.is_sign_negative());
     assert!(a2 == 0.0 && a2.is_sign_positive());

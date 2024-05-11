@@ -8,6 +8,13 @@ use heap::Heap;
 #[cfg(test)]
 mod test;
 
+#[macro_export]
+macro_rules! debugln {
+    ($($arg:tt)*) => {
+        println!($($arg)*)
+    };
+}
+
 /// A point in 2D space. it is ordered in lexicographic order.
 #[derive(PartialEq, Clone, Copy)]
 pub struct Point {
@@ -120,9 +127,9 @@ impl Benchline {
     /// y-coordinate of the line.
     fn find_region(&self, sites: &[Point], p: Point) -> usize {
         // debug print
-        // println!("find_region for {:?}", p);
+        // debugln!("find_region for {:?}", p);
         // for (r, b) in self.regions.iter() {
-        //     println!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
+        //     debugln!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
         // }
 
         for (i, (_, b)) in self.regions[..self.regions.len() - 1].iter().enumerate() {
@@ -136,9 +143,9 @@ impl Benchline {
 
     /// Find the index of region `r`, whose neighbors are `q` and `s`.
     fn find_region3(&self, q: SiteIdx, r: SiteIdx, s: SiteIdx) -> usize {
-        println!("find_region3 {:?} {:?} {:?}", q, r, s);
+        debugln!("find_region3 {:?} {:?} {:?}", q, r, s);
         // for (r, b) in self.regions.iter() {
-        //     println!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
+        //     debugln!("{:?}, {:?},{:?}", r.pos, b.a, b.b);
         // }
 
         for (i, window) in self.regions.windows(3).enumerate() {
@@ -319,14 +326,14 @@ pub fn fortune_algorithm(
         vertices[p as usize].add_neighbor(sites, p, q);
         vertices[q as usize].add_neighbor(sites, q, p);
     }
-    println!("initial benchline: {:?}", benchline);
+    debugln!("initial benchline: {:?}", benchline);
 
     on_progress(&benchline, events.as_slice());
 
     // 4. while Q is not empty begin
     // 5. p <- extract min(Q)
     while let Some(event) = events.pop() {
-        println!("event {:?} of {:?} in {:?}", event, events, benchline);
+        debugln!("event {:?} of {:?} in {:?}", event, events, benchline);
         // 6. case
         match event {
             // 7. p is a site:
@@ -343,7 +350,7 @@ pub fn fortune_algorithm(
                 //              vertical boundary between them. ..., Rq*, Cpq0, Rp*, Cpr, ... in
                 //              place of Rq*, Cqr.
                 if sites[p_idx as usize] == sites[q_idx as usize] {
-                    println!("duplicated points!!");
+                    debugln!("duplicated points!!");
                     let bpq = Bisector::new(sites, p_idx, q_idx);
 
                     let cqr = benchline.get_righ_boundary(reg_q_idx).unwrap();
@@ -353,7 +360,7 @@ pub fn fortune_algorithm(
                     let r = benchline.get_region(reg_q_idx + 2);
                     let vy = Bisector::new(sites, p_idx, r).y_at(sites, p.pos.x);
                     let v = Point::new(p.pos.x, vy);
-                    println!("vertex {} {} {}: {:?}", p_idx, q_idx, r, v);
+                    debugln!("vertex {} {} {}: {:?}", p_idx, q_idx, r, v);
                     vertices[p_idx as usize].add_vertex(sites, v, p_idx, q_idx, r);
                     vertices[q_idx as usize].add_vertex(sites, v, q_idx, p_idx, r);
                     vertices[r as usize].add_vertex(sites, v, r, p_idx, q_idx);
@@ -367,8 +374,8 @@ pub fn fortune_algorithm(
                             break 'right;
                         };
 
-                        println!("cqr   {:?}", cqr);
-                        println!("right neighbor {:?}", right_neighbor);
+                        debugln!("cqr   {:?}", cqr);
+                        debugln!("right neighbor {:?}", right_neighbor);
 
                         if let Some(Event::Intersection(p, (a, b, c))) =
                             events.find_mut(|e| match e {
@@ -378,7 +385,7 @@ pub fn fortune_algorithm(
                                         && (c == right_neighbor.a || c == right_neighbor.b);
 
                                     if found {
-                                        println!("removing {:?}", e);
+                                        debugln!("removing {:?}", e);
                                     }
 
                                     found
@@ -387,7 +394,7 @@ pub fn fortune_algorithm(
                             })
                         {
                             *a = p_idx;
-                            println!("replaced with {:?}", (p, (a, b, c)));
+                            debugln!("replaced with {:?}", (p, (a, b, c)));
                         }
                     }
 
@@ -419,7 +426,7 @@ pub fn fortune_algorithm(
                                 && (c == right_neighbor.a || c == right_neighbor.b);
 
                             if retain {
-                                println!("removing {:?}", e);
+                                debugln!("removing {:?}", e);
                             }
 
                             retain
@@ -437,8 +444,8 @@ pub fn fortune_algorithm(
                         break 'left;
                     };
 
-                    println!("cpq- {:?}", bpq.c_minus(sites));
-                    println!("left neighbor {:?}", left_neighbor);
+                    debugln!("cpq- {:?}", bpq.c_minus(sites));
+                    debugln!("left neighbor {:?}", left_neighbor);
 
                     let Some(p) = bpq.c_minus(sites).star_intersection(sites, left_neighbor) else {
                         break 'left;
@@ -448,7 +455,7 @@ pub fn fortune_algorithm(
                     let r = benchline.get_region(reg_q_idx);
                     let s = benchline.get_region(reg_q_idx + 1);
                     events.push(Event::Intersection(p, (q, r, s)));
-                    println!("l intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
+                    debugln!("l intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
                 }
 
                 'right: {
@@ -456,8 +463,8 @@ pub fn fortune_algorithm(
                         break 'right;
                     };
 
-                    println!("cpq+ {:?}", bpq.c_plus(sites));
-                    println!("right neighbor {:?}", right_neighbor);
+                    debugln!("cpq+ {:?}", bpq.c_plus(sites));
+                    debugln!("right neighbor {:?}", right_neighbor);
 
                     let Some(p) = bpq.c_plus(sites).star_intersection(sites, right_neighbor) else {
                         break 'right;
@@ -467,7 +474,7 @@ pub fn fortune_algorithm(
                     let r = benchline.get_region(reg_q_idx + 2);
                     let s = benchline.get_region(reg_q_idx + 3);
                     events.push(Event::Intersection(p, (q, r, s)));
-                    println!("r intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
+                    debugln!("r intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
                 }
             }
             // 13. p is an intersection:
@@ -496,8 +503,8 @@ pub fn fortune_algorithm(
                         break 'left;
                     };
 
-                    println!("cqr {:?}", cqr);
-                    println!("left neighbor {:?}", left_neighbor);
+                    debugln!("cqr {:?}", cqr);
+                    debugln!("left neighbor {:?}", left_neighbor);
 
                     events.remove(|e| match e {
                         &Event::Intersection(_, (a, b, c)) => {
@@ -506,7 +513,7 @@ pub fn fortune_algorithm(
                                 && (c == cqr.a || c == cqr.b);
 
                             if retain {
-                                println!("removing {:?}", e);
+                                debugln!("removing {:?}", e);
                             }
 
                             retain
@@ -520,8 +527,8 @@ pub fn fortune_algorithm(
                         break 'right;
                     };
 
-                    println!("crs {:?}", crs);
-                    println!("right neighbor {:?}", right_neighbor);
+                    debugln!("crs {:?}", crs);
+                    debugln!("right neighbor {:?}", right_neighbor);
 
                     events.remove(|e| match e {
                         &Event::Intersection(_, (a, b, c)) => {
@@ -530,7 +537,7 @@ pub fn fortune_algorithm(
                                 && (c == right_neighbor.a || c == right_neighbor.b);
 
                             if retain {
-                                println!("removing {:?}", e);
+                                debugln!("removing {:?}", e);
                             }
 
                             retain
@@ -545,8 +552,8 @@ pub fn fortune_algorithm(
                         break 'left;
                     };
 
-                    println!("cqs {:?}", cqs);
-                    println!("left neighbor {:?}", left_neighbor);
+                    debugln!("cqs {:?}", cqs);
+                    debugln!("left neighbor {:?}", left_neighbor);
 
                     let Some(i) = cqs.star_intersection(sites, left_neighbor) else {
                         break 'left;
@@ -563,7 +570,7 @@ pub fn fortune_algorithm(
                     let r = benchline.get_region(region_r_idx - 1);
                     let s = benchline.get_region(region_r_idx);
                     events.push(Event::Intersection(i, (q, r, s)));
-                    println!("il intersection {:?}, ({:?}, {:?}, {:?})", i, q, r, s);
+                    debugln!("il intersection {:?}, ({:?}, {:?}, {:?})", i, q, r, s);
                 }
 
                 'right: {
@@ -571,7 +578,7 @@ pub fn fortune_algorithm(
                         break 'right;
                     };
 
-                    println!("right neighbor {:?}", right_neighbor);
+                    debugln!("right neighbor {:?}", right_neighbor);
 
                     let Some(p) = cqs.star_intersection(sites, right_neighbor) else {
                         break 'right;
@@ -581,13 +588,13 @@ pub fn fortune_algorithm(
                     let r = benchline.get_region(region_r_idx);
                     let s = benchline.get_region(region_r_idx + 1);
                     events.push(Event::Intersection(p, (q, r, s)));
-                    println!("ir intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
+                    debugln!("ir intersection {:?}, ({:?}, {:?}, {:?})", p, q, r, s);
                 }
 
                 // 19. Mark p as a vertex and as an endpoint of Bqr*, Brs*, and Bqs*.
                 let p_unstar = circumcenter(q, r, s);
-                println!("circuncenter of {:?} {:?} {:?}: {:?}", q, r, s, p_unstar);
-                println!("vertex {} {} {}: {:?}", q_idx, r_idx, s_idx, p_unstar);
+                debugln!("circuncenter of {:?} {:?} {:?}: {:?}", q, r, s, p_unstar);
+                debugln!("vertex {} {} {}: {:?}", q_idx, r_idx, s_idx, p_unstar);
                 vertices[q_idx as usize].add_vertex(sites, p_unstar, q_idx, r_idx, s_idx);
                 vertices[r_idx as usize].add_vertex(sites, p_unstar, r_idx, q_idx, s_idx);
                 vertices[s_idx as usize].add_vertex(sites, p_unstar, s_idx, q_idx, r_idx);
@@ -634,7 +641,7 @@ fn angle_cmp(sites: &[Point], o: SiteIdx, a: SiteIdx, b: SiteIdx) -> f32 {
     let angle_a = angle(sites, o, a);
     let angle_b = angle(sites, o, b);
 
-    println!(
+    debugln!(
         "{}: angle_cmp {:?} {:?} {:?} {:?} {:?}",
         o,
         a,
@@ -691,7 +698,7 @@ impl Cell {
     fn add_neighbor(&mut self, sites: &[Point], this_idx: SiteIdx, neighbor: SiteIdx) -> usize {
         let angle_a = angle(sites, this_idx, neighbor);
 
-        println!(
+        debugln!(
             "{}: adding {:?} ({:.0}) to {:?} ({:?})",
             this_idx,
             neighbor,
@@ -749,9 +756,14 @@ impl Cell {
             std::mem::swap(&mut a_idx, &mut b_idx);
         }
 
-        println!(
+        debugln!(
             "{}: adding {:?} {:?} to {:?} ({:?}): {:?}",
-            this_idx, a_idx, b_idx, self.neighbors, self.points, point
+            this_idx,
+            a_idx,
+            b_idx,
+            self.neighbors,
+            self.points,
+            point
         );
 
         self.add_neighbor(sites, this_idx, b_idx);
@@ -760,9 +772,14 @@ impl Cell {
         debug_assert!(self.points[i].is_nan());
         self.points[i] = point;
 
-        println!(
+        debugln!(
             "{}: added  {:?} {:?} to {:?} ({:?}): {:?}",
-            this_idx, a_idx, b_idx, self.neighbors, self.points, point
+            this_idx,
+            a_idx,
+            b_idx,
+            self.neighbors,
+            self.points,
+            point
         );
     }
 }
@@ -894,16 +911,16 @@ impl Bisector {
         let (a, b) = self.ab(sites);
 
         if point.pos.x < self.min_x {
-            println!("less! {} {}", point.pos.x, self.min_x);
+            debugln!("less! {} {}", point.pos.x, self.min_x);
             return std::cmp::Ordering::Less;
         }
         if point.pos.x >= self.max_x {
-            println!("great! {} {}", point.pos.x, self.max_x);
+            debugln!("great! {} {}", point.pos.x, self.max_x);
             return std::cmp::Ordering::Greater;
         }
 
         if (b.pos.y - a.pos.y) == 0.0 {
-            println!("equal! {} {}", point.pos.x, a.pos.x);
+            debugln!("equal! {} {}", point.pos.x, a.pos.x);
             // the bisector is a vertical line segment
             return point
                 .pos
@@ -924,7 +941,7 @@ impl Bisector {
 
         let bisector_star_y = self.y_star_at(sites, point.pos.x);
 
-        println!("{} <=> {}", point.pos.y, bisector_star_y);
+        debugln!("{} <=> {}", point.pos.y, bisector_star_y);
 
         let ord = point.pos.y.partial_cmp(&bisector_star_y).unwrap();
 
@@ -947,7 +964,7 @@ impl Bisector {
         let (oa, ob) = other.ab(sites);
 
         if self.min_x >= other.max_x || self.max_x <= other.min_x {
-            println!("out of domain");
+            debugln!("out of domain");
             return None;
         }
 
@@ -958,7 +975,7 @@ impl Bisector {
 
         // py=qy: vertical boundary
         if py == qy {
-            println!("vertical 1!");
+            debugln!("vertical 1!");
             let x = (px + qx) / 2.0;
             let y = other.y_at(sites, x);
             return Some(Point { pos: vec2(x, y) });
@@ -971,7 +988,7 @@ impl Bisector {
 
         // ry=sy: vertical boundary
         if ry == sy {
-            println!("vertical 2!");
+            debugln!("vertical 2!");
             let x = (rx + sx) / 2.0;
             let y = self.y_at(sites, x);
             return Some(Point { pos: vec2(x, y) });
@@ -992,7 +1009,7 @@ impl Bisector {
             - 2.0 * qy * sx;
 
         if d == 0.0 {
-            println!("divided by zero!");
+            debugln!("divided by zero!");
             return None;
         }
 
@@ -1021,9 +1038,13 @@ impl Bisector {
         let y = ny / d;
 
         if x < self.min_x || x >= self.max_x || x < other.min_x || x >= other.max_x {
-            println!(
+            debugln!(
                 "out of domain 2, {} {} {} {} {}",
-                x, self.min_x, self.max_x, other.min_x, other.max_x
+                x,
+                self.min_x,
+                self.max_x,
+                other.min_x,
+                other.max_x
             );
             return None;
         }
@@ -1346,7 +1367,7 @@ async fn main_() {
 
             if _thread.as_ref().is_some_and(|x| x.is_finished()) {
                 cells = Some(_thread.take().unwrap().join().unwrap());
-                println!("cells: {:?}", cells);
+                debugln!("cells: {:?}", cells);
             }
         }
 
