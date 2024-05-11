@@ -562,7 +562,7 @@ pub fn fortune_algorithm(
                     // if a new intersection happens at the same point, it came from a boundary
                     // that passes through this point. We consider that boundary to be to the left
                     // of this one, so we should ignore this intersection.
-                    if i.pos.x == p.pos.x {
+                    if i == p {
                         break 'left;
                     }
 
