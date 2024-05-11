@@ -313,12 +313,42 @@ fn diagram_fuzz_dup_5() {
 }
 
 #[test]
+fn diagram_fuzz_dup_6() {
+    let points = vec![
+        Point::new(0.0, 0.0),
+        Point::new(1.0, 1.0),
+        Point::new(1.0, 1.0),
+        Point::new(1.0, 1.0),
+    ];
+
+    diagram_fuzz_points(points);
+}
+
+#[test]
 fn diagram_fuzz_dup_7() {
     let points = vec![
         Point::new(2.0, 1.0),
         Point::new(8.0, 6.0),
         Point::new(8.0, 6.0),
         Point::new(8.0, 6.0),
+    ];
+
+    diagram_fuzz_points(points);
+}
+
+#[test]
+fn diagram_fuzz_dup_8() {
+    let points = vec![
+        Point::new(0.0, 1.0),
+        Point::new(0.0, 1.0),
+        Point::new(1.0, 1.0),
+        Point::new(1.0, 1.0),
+        Point::new(8.0, 1.0),
+        Point::new(8.0, 1.0),
+        Point::new(1.0, 2.0),
+        Point::new(0.0, 4.0),
+        Point::new(0.0, 4.0),
+        Point::new(7.0, 4.0),
     ];
 
     diagram_fuzz_points(points);
@@ -357,6 +387,23 @@ fn diagram_fuzz6() {
 #[test]
 fn diagram_fuzz7() {
     diagram_fuzz_(vec![(0, 0), (1, 0), (0, 2), (3, 3), (3, 4), (0, 5)])
+}
+
+#[test]
+fn diagram_fuzz8() {
+    diagram_fuzz_(vec![
+        (4, 2), //
+        (5, 2),
+        (3, 3),
+        (4, 5),
+        (0, 6),
+        (2, 7),
+    ]);
+}
+
+#[test]
+fn diagram_fuzz9() {
+    diagram_fuzz_(vec![(0, 4), (1, 4), (2, 5), (2, 6)]);
 }
 
 fn diagram_fuzz_(points: Vec<(i32, i32)>) {

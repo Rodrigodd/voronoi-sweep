@@ -259,7 +259,28 @@ pub fn fortune_algorithm(
                 (Event::Site(a), Event::Site(b)) => a.cmp(b),
                 (Event::Site(_), Event::Intersection(_, _)) => std::cmp::Ordering::Less,
                 (Event::Intersection(_, _), Event::Site(_)) => std::cmp::Ordering::Greater,
-                (Event::Intersection(pa, _), Event::Intersection(pb, _)) => pa.cmp(pb),
+                (&Event::Intersection(p1, (q, r, s)), &Event::Intersection(p2, (t, u, v))) => {
+                    // If two intersections are coincident, the one which will merge to a Cqs+
+                    // boundary will have priority. Otherwise, the Cqs- will remove the other
+                    // intersection, and will not intersect again, due to its exclusive point.
+                    // This does not solve the problem in case both are negative, but I think this
+                    // will never happen.
+                    let c1 = Bisector::c_merge(sites, p1, q, r, s);
+                    let c2 = Bisector::c_merge(sites, p2, t, u, v);
+
+                    let is_plus1 = c1.min_x.is_finite();
+                    let is_plus2 = c2.min_x.is_finite();
+
+                    match (is_plus1, is_plus2) {
+                        (true, false) => std::cmp::Ordering::Less,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        (true, true) => (q, r, s).cmp(&(t, u, v)),
+                        (false, false) => {
+                            // debug_assert!(false, "this case does not happen! I think...");
+                            (q, r, s).cmp(&(t, u, v))
+                        }
+                    }
+                }
             };
         }
 
@@ -458,31 +479,13 @@ pub fn fortune_algorithm(
                 // 14. Let p be the intersection of boundaries Cqr and Crs.
 
                 // 15. Create the bisector Bqs*.
-                let bqs = Bisector::new(sites, q_idx, s_idx);
-
                 // 16. Update list L so it contains Cqs = Cqs- or Cqs+,as appropriate, instead of Cqr, R*r, Crs.
+
                 let region_r_idx = benchline.find_region3(q_idx, r_idx, s_idx);
 
-                // Cqs is Cqs+ either if p is to the right of the higher of q and s or if q and s
-                // are cohorizontal; otherwise Cqs is Cqs-.
-                let plus = p.pos.x >= q.max(s).pos.x || q.pos.y == s.pos.y;
-                let cqs = if q.pos.y == s.pos.y {
-                    bqs // cqs0
-                } else if plus {
-                    // cqs+
-                    Bisector {
-                        min_x: p.pos.x,
-                        ..bqs
-                    }
-                } else {
-                    // cqs-
-                    Bisector {
-                        max_x: p.pos.x,
-                        ..bqs
-                    }
-                };
-
+                let cqs = Bisector::c_merge(sites, p, q_idx, r_idx, s_idx);
                 let cqr = benchline.get_left_boundary(region_r_idx).unwrap();
+
                 let crs = benchline.get_righ_boundary(region_r_idx).unwrap();
 
                 benchline.merge(region_r_idx, cqs);
@@ -905,8 +908,16 @@ impl Bisector {
                 .x
                 .partial_cmp(&a.pos.x)
                 .unwrap()
-                // same reasoning below
-                .then(std::cmp::Ordering::Less);
+                // if we are on the vertical line, we are on the left side (as the logic below),
+                // unless we are at the boundary of a coincident point, them we are on the right
+                // side (because this point index is greater).
+                .then_with(|| {
+                    if point == a {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        std::cmp::Ordering::Less
+                    }
+                });
         }
 
         let bisector_star_y = self.y_star_at(sites, point.pos.x);
@@ -1027,6 +1038,37 @@ impl Bisector {
 
     fn ab(&self, sites: &[Point]) -> (Point, Point) {
         (sites[self.a as usize], sites[self.b as usize])
+    }
+
+    /// Return the bisector created at the intersection of the two bisectors (step 16 of the
+    /// algoritmh). Returns Cqs+, Cqs- or Cqs0, as appropriated.
+    ///
+    /// From paper, "Cqs is Cqs+ either if p is to the right of the higher of q and s or if q
+    /// and s are cohorizontal; otherwise Cqs is Cqs-.". Modified to better handle vertical
+    /// bisectors (Cqs0).
+    fn c_merge(sites: &[Point], p: Point, q_idx: u32, _r_idx: u32, s_idx: u32) -> Bisector {
+        let q = sites[q_idx as usize];
+        let s = sites[s_idx as usize];
+        let bqs = Bisector::new(sites, q_idx, s_idx);
+
+        if q.pos.y == s.pos.y {
+            return bqs; // cqs0
+        }
+
+        let plus = p.pos.x >= q.max(s).pos.x || q.pos.y == s.pos.y;
+        if plus {
+            // cqs+
+            Bisector {
+                min_x: p.pos.x,
+                ..bqs
+            }
+        } else {
+            // cqs-
+            Bisector {
+                max_x: p.pos.x,
+                ..bqs
+            }
+        }
     }
 }
 
