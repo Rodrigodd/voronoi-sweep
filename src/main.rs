@@ -552,7 +552,9 @@ pub fn fortune_algorithm(
                         break 'left;
                     };
 
-                    //
+                    // if a new intersection happens at the same point, it came from a boundary
+                    // that passes through this point. We consider that boundary to be to the left
+                    // of this one, so we should ignore this intersection.
                     if i.pos.x == p.pos.x {
                         break 'left;
                     }
@@ -772,9 +774,9 @@ pub struct Bisector {
     a: SiteIdx,
     /// The lower point.
     b: SiteIdx,
-    /// The x value of the leftmost point of the hyperbola segment.
+    /// The x value of the leftmost point of the hyperbola segment, inclusive.
     min_x: f32,
-    /// The x value of the rightmost point of the hyperbola segment.
+    /// The x value of the rightmost point of the hyperbola segment, exclusive.
     max_x: f32,
 }
 
@@ -1076,8 +1078,6 @@ fn line_equation(x: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
     let x = x - ax;
     let dx = bx - ax;
     let dy = by - ay;
-
-    dbg!(x, dx, dy);
 
     let dx2 = dx * dx;
     let dy2 = dy * dy;
