@@ -436,14 +436,17 @@ fn diagram_fuzz_points(sites: Vec<Point>) {
     for (i, (cell, &site)) in vertexes.into_iter().zip(&sites).enumerate() {
         debugln!("{}: cell {:?}", i, cell);
 
-        let intersection_count = cell.points.iter().filter(|v| v.is_nan().not()).count();
-
         if sites.len() > 1 {
             assert!(!cell.points.is_empty());
         }
 
-        assert!(intersection_count <= cell.points.len());
-        assert!(intersection_count + 2 >= cell.points.len());
+        let nan_count = cell.points.iter().filter(|v| v.is_nan()).count();
+
+        assert!(nan_count <= 2);
+        // this only happens when the cell has 2 parallel bisectors
+        if nan_count == 2 {
+            assert_eq!(cell.points.len(), 2);
+        }
 
         // the distance of the intersection point to the site should be the same as the distance to
         // the neighbors
