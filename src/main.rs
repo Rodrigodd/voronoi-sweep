@@ -558,12 +558,13 @@ pub fn fortune_algorithm(
                     cqs
                 };
 
+                debugln!("cqs {:?}", cqs);
+
                 'left: {
                     let Some(left_neighbor) = benchline.get_left_boundary(region_r_idx - 1) else {
                         break 'left;
                     };
 
-                    debugln!("cqs {:?}", cqs);
                     debugln!("left neighbor {:?}", left_neighbor);
 
                     let Some(i) = cqs.star_intersection(sites, left_neighbor) else {
@@ -585,11 +586,17 @@ pub fn fortune_algorithm(
                 }
 
                 'right: {
-                    let Some(right_neighbor) = benchline.get_righ_boundary(region_r_idx) else {
+                    let Some(mut right_neighbor) = benchline.get_righ_boundary(region_r_idx) else {
                         break 'right;
                     };
 
                     debugln!("right neighbor {:?}", right_neighbor);
+
+                    // We should be able to intersect with the right neighbor, even if it start at
+                    // this point. This is need to handle coincident intersections.
+                    if right_neighbor.max_x.is_finite() {
+                        right_neighbor.max_x = f32_next_up(right_neighbor.max_x);
+                    }
 
                     let Some(p) = cqs.star_intersection(sites, right_neighbor) else {
                         break 'right;
