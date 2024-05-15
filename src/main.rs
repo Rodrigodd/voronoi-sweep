@@ -547,6 +547,17 @@ pub fn fortune_algorithm(
                 }
 
                 // 18. Insert any intersections between Cqs and its neighbors to the left or right into Q.
+
+                let cqs = if cqs.max_x.is_finite() {
+                    // a bisector going left should intersect a coincident bisector.
+                    Bisector {
+                        max_x: f32_next_up(cqs.max_x),
+                        ..cqs
+                    }
+                } else {
+                    cqs
+                };
+
                 'left: {
                     let Some(left_neighbor) = benchline.get_left_boundary(region_r_idx - 1) else {
                         break 'left;
@@ -560,9 +571,9 @@ pub fn fortune_algorithm(
                     };
 
                     // if a new intersection happens at the same point, it came from a boundary
-                    // that passes through this point. We consider that boundary to be to the left
-                    // of this one, so we should ignore this intersection.
-                    if i == p {
+                    // that passes through this point. In that case, we consider that boundary to
+                    // be to the left of this one, so we should ignore this intersection.
+                    if i == p && p == sites[cqs.a as usize] {
                         break 'left;
                     }
 
