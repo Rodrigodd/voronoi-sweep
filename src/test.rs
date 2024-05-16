@@ -367,6 +367,17 @@ fn diagram_fuzz_dup_9() {
 }
 
 #[test]
+fn diagram_fuzz_dup_10() {
+    let points = vec![
+        Point::new(0.0, 0.0),
+        Point::new(0.0, 0.0),
+        Point::new(0.0, 0.0),
+    ];
+
+    diagram_fuzz_points(points);
+}
+
+#[test]
 fn diagram_fuzz1() {
     diagram_fuzz_(vec![(2, 0), (0, 1), (4, 1), (2, 2)])
 }
@@ -468,14 +479,16 @@ fn diagram_fuzz_points(sites: Vec<Point>) {
         assert!(nan_count <= 2);
         if nan_count > 1 {
             // this only happens when the cell has 2 parallel bisectors. This means it have only
-            // two oposing neighbors, but could be more than 2 if they are coincident.
+            // two oposing neighbors, but could be more than 2 if they are coincident. Or 1, if all
+            // points are coincident.
             let neighbors = {
                 let mut x = cell.neighbors.clone();
                 x.dedup_by_key(|idx| sites[*idx as usize]);
                 x
             };
 
-            assert_eq!(neighbors.len(), 2);
+            assert!(neighbors.len() >= 1);
+            assert!(neighbors.len() <= 2);
         }
 
         // the distance of the intersection point to the site should be the same as the distance to
