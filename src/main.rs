@@ -913,18 +913,16 @@ impl Bisector {
             return a.pos.y;
         }
 
-        let dx = b.pos.x as f64 - a.pos.x as f64;
-        let dy = b.pos.y as f64 - a.pos.y as f64;
-        let x = x as f64 - a.pos.x as f64;
+        let dx = b.pos.x - a.pos.x;
+        let dy = b.pos.y - a.pos.y;
+        let x = x - a.pos.x;
 
         let x2 = x * x;
         let dx2 = dx * dx;
         let dy2 = dy * dy;
 
-        let sqrt = |x: f64| x.sqrt();
-
         let i1 = (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy);
-        (a.pos.y as f64 + sqrt(x2 + (i1).powi(2)) + i1) as f32
+        a.pos.y + (x2 + (i1).powi(2)).sqrt() + i1
     }
 
     /// Return if point is on the left side or right side of the hyperbola, obtained by the
