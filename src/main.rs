@@ -736,7 +736,7 @@ impl Cell {
             let mut theta = angle_a - angle_b;
 
             if angle_a == angle_b {
-                theta = angle_cmp(sites, this_idx, neighbor, b_idx);
+                theta = angle_cmp(sites, this_idx, b_idx, neighbor);
             }
 
             if theta.is_sign_negative() {
