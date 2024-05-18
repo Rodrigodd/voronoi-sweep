@@ -378,6 +378,19 @@ fn diagram_fuzz_dup_10() {
 }
 
 #[test]
+fn diagram_fuzz_dup_11() {
+    let points = vec![
+        Point::new(0.0, -25.0),
+        Point::new(24.0, -19.0),
+        Point::new(0.0, 0.0),
+        Point::new(29.0, 0.0),
+        Point::new(29.0, 0.0),
+    ];
+
+    diagram_fuzz_points(points);
+}
+
+#[test]
 fn diagram_fuzz1() {
     diagram_fuzz_(vec![(2, 0), (0, 1), (4, 1), (2, 2)])
 }
