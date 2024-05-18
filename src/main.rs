@@ -906,23 +906,26 @@ impl Bisector {
 
     /// The y value of the hyperbola "bisector*" at x.
     fn y_star_at(&self, sites: &[Point], x: f32) -> f32 {
-        let (a, b) = self.ab(sites);
+        // let (a, b) = self.ab(sites);
+        //
+        // // It is important to guarantee this, when leading with coincident points.
+        // if x == a.pos.x {
+        //     return a.pos.y;
+        // }
+        //
+        // let dx = b.pos.x - a.pos.x;
+        // let dy = b.pos.y - a.pos.y;
+        // let x = x - a.pos.x;
+        //
+        // let x2 = x * x;
+        // let dx2 = dx * dx;
+        // let dy2 = dy * dy;
+        //
+        // let i1 = (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy);
+        // a.pos.y + (x2 + (i1).powi(2)).sqrt() + i1
 
-        // It is important to guarantee this, when leading with coincident points.
-        if x == a.pos.x {
-            return a.pos.y;
-        }
-
-        let dx = b.pos.x - a.pos.x;
-        let dy = b.pos.y - a.pos.y;
-        let x = x - a.pos.x;
-
-        let x2 = x * x;
-        let dx2 = dx * dx;
-        let dy2 = dy * dy;
-
-        let i1 = (dx2 - 2.0 * dx * x + dy2) / (2.0 * dy);
-        a.pos.y + (x2 + (i1).powi(2)).sqrt() + i1
+        let y = self.y_at(sites, x);
+        y + dist(sites[self.a as usize], Point::new(x, y))
     }
 
     /// Return if point is on the left side or right side of the hyperbola, obtained by the
