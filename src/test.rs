@@ -12,10 +12,10 @@ fn close(a: f32, b: f32) -> bool {
 #[test]
 fn bisector_intersection() {
     let sites = &[
-        Point { pos: vec2(0., 0.) },
-        Point { pos: vec2(1., 0.) },
-        Point { pos: vec2(0., 1.) },
-        Point { pos: vec2(1., 1.) },
+        Point::new(0., 0.),
+        Point::new(1., 0.),
+        Point::new(0., 1.),
+        Point::new(1., 1.),
     ];
 
     let ad = super::Bisector::new(sites, 0, 3);
@@ -28,11 +28,7 @@ fn bisector_intersection() {
 
 #[test]
 fn bisector_intersection1() {
-    let sites = &[
-        Point { pos: vec2(0., 0.) },
-        Point { pos: vec2(0., 0.) },
-        Point { pos: vec2(0., 1.) },
-    ];
+    let sites = &[Point::new(0., 0.), Point::new(0., 0.), Point::new(0., 1.)];
 
     let cpq_plus = super::Bisector::new(sites, 2, 0).c_plus(sites);
     let right_neighbor = super::Bisector::new(sites, 1, 0);
@@ -66,19 +62,11 @@ fn bisector_intersections() {
         .unwrap();
 }
 
-fn bisector_intersections_(a: (u8, u8), b: (u8, u8), c: (u8, u8), d: (u8, u8)) -> bool {
-    let a = Point {
-        pos: vec2(a.0 as f32, a.1 as f32),
-    };
-    let b = Point {
-        pos: vec2(b.0 as f32, b.1 as f32),
-    };
-    let c = Point {
-        pos: vec2(c.0 as f32, c.1 as f32),
-    };
-    let d = Point {
-        pos: vec2(d.0 as f32, d.1 as f32),
-    };
+fn bisector_intersections_(a: (u8, u8), b: (u8, u8), c: (u8, u8), d: (u8, u8)) {
+    let a = Point::new(a.0 as f32, a.1 as f32);
+    let b = Point::new(b.0 as f32, b.1 as f32);
+    let c = Point::new(c.0 as f32, c.1 as f32);
+    let d = Point::new(d.0 as f32, d.1 as f32);
 
     let sites = &[a, b, c, d];
     let ab = super::Bisector::new(sites, 0, 1);
@@ -87,7 +75,7 @@ fn bisector_intersections_(a: (u8, u8), b: (u8, u8), c: (u8, u8), d: (u8, u8)) -
     debugln!("ab: {:?}, cd: {:?}", ab, cd);
 
     let Some(p) = ab.intersection(sites, cd) else {
-        return true;
+        return;
     };
 
     debugln!("p: {:?}", p);
@@ -99,20 +87,21 @@ fn bisector_intersections_(a: (u8, u8), b: (u8, u8), c: (u8, u8), d: (u8, u8)) -
 
     // Ignore NaN/Infinite results
     if !da.is_finite() || !db.is_finite() || !dc.is_finite() || !dd.is_finite() {
-        return true;
+        return;
     }
 
     debugln!("da: {}, db: {}, dc: {}, dd: {}", da, db, dc, dd);
 
-    close(da, db) && close(dc, dd)
+    assert!(close(da, db));
+    assert!(close(dc, dd));
 }
 
 #[test]
 fn bisector_cmp() {
-    let p = Point { pos: vec2(1., 0.) };
-    let q = Point { pos: vec2(0., 1.) };
-    let r = Point { pos: vec2(1., 1.) };
-    let t = Point { pos: vec2(-1., 1.) };
+    let p = Point::new(1., 0.);
+    let q = Point::new(0., 1.);
+    let r = Point::new(1., 1.);
+    let t = Point::new(-1., 1.);
 
     let sites = &[p, q, r, t];
 
@@ -130,9 +119,9 @@ fn bisector_cmp() {
 
 #[test]
 fn bisector_cmp1() {
-    let p = Point { pos: vec2(4., 0.) };
-    let q = Point { pos: vec2(0., 1.) };
-    let r = Point { pos: vec2(5., 2.) };
+    let p = Point::new(4., 0.);
+    let q = Point::new(0., 1.);
+    let r = Point::new(5., 2.);
 
     let sites = &[p, q, r];
 
@@ -147,9 +136,9 @@ fn bisector_cmp1() {
 
 #[test]
 fn bisector_no_intersection() {
-    let p = Point { pos: vec2(1., 0.) };
-    let q = Point { pos: vec2(0., 1.) };
-    let r = Point { pos: vec2(1., 1.) };
+    let p = Point::new(1., 0.);
+    let q = Point::new(0., 1.);
+    let r = Point::new(1., 1.);
 
     let sites = &[p, q, r];
 
@@ -171,9 +160,9 @@ fn bisector_no_intersection() {
 
 #[test]
 fn diagram() {
-    let p = Point { pos: vec2(1., 0.) };
-    let q = Point { pos: vec2(0., 1.) };
-    let r = Point { pos: vec2(1., 1.) };
+    let p = Point::new(1., 0.);
+    let q = Point::new(0., 1.);
+    let r = Point::new(1., 1.);
     let points = [p, q, r];
 
     let intersection = Bisector::new(&points, 0, 1)
@@ -463,12 +452,15 @@ fn diagram_fuzz12() {
     diagram_fuzz_(vec![(8, -16), (31, -9), (20, -2), (0, 0)]);
 }
 
+#[test]
+fn diagram_fuzz13() {
+    diagram_fuzz_(vec![(15, -29), (7, -14), (21, -2), (0, 0)]);
+}
+
 fn diagram_fuzz_(points: Vec<(i32, i32)>) {
     let mut sites = points
         .into_iter()
-        .map(|(x, y)| Point {
-            pos: vec2(x as f32, y as f32),
-        })
+        .map(|(x, y)| Point::new(x as f32, y as f32))
         .collect::<Vec<_>>();
 
     // remove duplicates
@@ -537,9 +529,7 @@ fn diagram1() {
 
     let points = points
         .iter()
-        .map(|(x, y)| Point {
-            pos: vec2(*x as f32, *y as f32),
-        })
+        .map(|(x, y)| Point::new(*x as f32, *y as f32))
         .collect::<Vec<_>>();
 
     let mut expected_benchline: &[&[SiteIdx]] = &[
@@ -599,12 +589,8 @@ proptest! {
 }
 
 fn bisector_y_at(a: (u8, u8), b: (u8, u8)) -> bool {
-    let p = Point {
-        pos: vec2(a.0 as f32, a.1 as f32),
-    };
-    let q = Point {
-        pos: vec2(b.0 as f32, b.1 as f32),
-    };
+    let p = Point::new(a.0 as f32, a.1 as f32);
+    let q = Point::new(b.0 as f32, b.1 as f32);
 
     let sites = &[p, q];
 
@@ -625,12 +611,8 @@ fn bisector_y_at(a: (u8, u8), b: (u8, u8)) -> bool {
 
 #[test]
 fn bisector_y_at1() {
-    let p = Point {
-        pos: vec2(1.0, 1.0),
-    };
-    let q = Point {
-        pos: vec2(0.0, 0.0),
-    };
+    let p = Point::new(1.0, 1.0);
+    let q = Point::new(0.0, 0.0);
 
     let sites = &[p, q];
 
@@ -645,15 +627,9 @@ fn bisector_y_at1() {
 
 #[test]
 fn y_star_at() {
-    let p = Point {
-        pos: vec2(5.0, 2.0),
-    };
-    let q = Point {
-        pos: vec2(4.0, 0.0),
-    };
-    let r = Point {
-        pos: vec2(5.0, 3.0),
-    };
+    let p = Point::new(5.0, 2.0);
+    let q = Point::new(4.0, 0.0);
+    let r = Point::new(5.0, 3.0);
 
     let sites = &[p, q, r];
 
@@ -674,6 +650,12 @@ proptest! {
 }
 
 fn test_circumcenter(a: (u8, u8), b: (u8, u8), c: (u8, u8)) {
+    let p = Point::new(a.0 as f32, a.1 as f32);
+    let q = Point::new(b.0 as f32, b.1 as f32);
+    let r = Point::new(c.0 as f32, c.1 as f32);
+
+    let cc = circumcenter(p, q, r);
+
     // check if points are collinear
     {
         let (ax, ay) = (a.0 as i32, a.1 as i32);
@@ -681,25 +663,16 @@ fn test_circumcenter(a: (u8, u8), b: (u8, u8), c: (u8, u8)) {
         let (cx, cy) = (c.0 as i32, c.1 as i32);
 
         if (by - ay) * (cx - bx) == (cy - by) * (bx - ax) {
+            assert!(cc.is_none());
             return;
         }
     }
 
-    let a = Point {
-        pos: vec2(a.0 as f32, a.1 as f32),
-    };
-    let b = Point {
-        pos: vec2(b.0 as f32, b.1 as f32),
-    };
-    let c = Point {
-        pos: vec2(c.0 as f32, c.1 as f32),
-    };
+    let cc = cc.unwrap();
 
-    let cc = circumcenter(a, b, c);
-
-    let r1 = dist(cc, a);
-    let r2 = dist(cc, b);
-    let r3 = dist(cc, c);
+    let r1 = dist(cc, p);
+    let r2 = dist(cc, q);
+    let r3 = dist(cc, r);
 
     debugln!("r1: {}, r2: {}, r3: {}", r1, r2, r3);
 
@@ -723,9 +696,7 @@ fn test_cell() {
 
     let sites = &points
         .iter()
-        .map(|&(x, y)| Point {
-            pos: vec2(x as f32, y as f32),
-        })
+        .map(|&(x, y)| Point::new(x as f32, y as f32))
         .collect::<Vec<_>>();
 
     let mut intersections: Vec<_> = (1..sites.len() as u32)

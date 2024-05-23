@@ -610,7 +610,7 @@ pub fn fortune_algorithm(
                 }
 
                 // 19. Mark p as a vertex and as an endpoint of Bqr*, Brs*, and Bqs*.
-                let p_unstar = circumcenter(q, r, s);
+                let p_unstar = circumcenter(q, r, s).unwrap();
                 debugln!("circuncenter of {:?} {:?} {:?}: {:?}", q, r, s, p_unstar);
                 debugln!("vertex {} {} {}: {:?}", q_idx, r_idx, s_idx, p_unstar);
                 vertices[q_idx as usize].add_vertex(sites, p_unstar, q_idx, r_idx, s_idx);
@@ -962,18 +962,43 @@ impl Bisector {
                 });
         }
 
-        let bisector_star_y = self.y_star_at(sites, point.pos.x);
+        // Calculates the intersection point of the bisector* with the vertical line that pass
+        // through `point`. Then check if it is to the left or to the right.
+        let dx = b.pos.x - a.pos.x;
+        let dy = b.pos.y - a.pos.y;
+        let y = point.pos.y - a.pos.y;
 
-        debugln!("{} <=> {}", point.pos.y, bisector_star_y);
+        let dx2 = dx * dx;
+        let dy2 = dy * dy;
 
-        let ord = point.pos.y.partial_cmp(&bisector_star_y).unwrap();
+        let t1 = (y * (-dy + y)).sqrt();
+        let t2 = (dx2 + dy2).sqrt();
 
-        // if this is the right half of the hyperbola, above y means left side.
-        let ord = if self.min_x >= a.pos.x {
-            ord.reverse()
+        dbg!(dx, dy, y, t1, t2);
+
+        // If we are on `cqs-` or `cqs+`, we choose the corresponding solution.
+        let bisector_star_x = if (point.pos.x < a.pos.x) == (dy > 0.0) {
+            a.pos.x + (dx * y - t1 * t2) / dy
         } else {
-            ord
+            a.pos.x + (dx * y + t1 * t2) / dy
         };
+
+        debugln!("{} <=> {} ({})", point.pos.x, bisector_star_x, a.pos.x);
+
+        let ord = point.pos.x.partial_cmp(&bisector_star_x).unwrap();
+
+        // let bisector_star_y = self.y_star_at(sites, point.pos.x);
+        //
+        // debugln!("{} <=> {}", point.pos.y, bisector_star_y);
+        //
+        // let ord = point.pos.y.partial_cmp(&bisector_star_y).unwrap();
+        //
+        // // if this is the right half of the hyperbola, above y means left side.
+        // let ord = if self.min_x >= a.pos.x {
+        //     ord.reverse()
+        // } else {
+        //     ord
+        // };
 
         // if a point `q` is on the bisector, it will be on the left side, in order to Cq_+ to
         // intersect with the bisector (Cqr- would not intersect it, because it don't contain `q`
@@ -1026,10 +1051,8 @@ impl Bisector {
         let sx2 = sx * sx;
         let sy2 = sy * sy;
 
-        let d = 2.0 * px * ry - 2.0 * px * sy - 2.0 * py * rx + 2.0 * py * sx - 2.0 * qx * ry
-            + 2.0 * qx * sy
-            + 2.0 * qy * rx
-            - 2.0 * qy * sx;
+        let d =
+            2.0 * (px * ry - px * sy - py * rx + py * sx - qx * ry + qx * sy + qy * rx - qy * sx);
 
         if d == 0.0 {
             debugln!("divided by zero!");
@@ -1101,7 +1124,7 @@ impl Bisector {
             return bqs; // cqs0
         }
 
-        let plus = p.pos.x >= q.max(s).pos.x || q.pos.y == s.pos.y;
+        let plus = p.pos.x >= q.max(s).pos.x;
         if plus {
             // cqs+
             Bisector {
@@ -1147,7 +1170,7 @@ fn start_map(p: Point, q: Point) -> Point {
 }
 
 /// Finds the circumcenter of the triangle formed by the points `a`, `b`, and `c`.
-fn circumcenter(a: Point, b: Point, c: Point) -> Point {
+fn circumcenter(a: Point, b: Point, c: Point) -> Option<Point> {
     let d = 2.0
         * (a.pos.x * (b.pos.y - c.pos.y)
             + b.pos.x * (c.pos.y - a.pos.y)
@@ -1159,15 +1182,15 @@ fn circumcenter(a: Point, b: Point, c: Point) -> Point {
             (a, c)
         } else if a == c {
             (a, b)
-        } else {
+        } else if b == c {
             (c, a)
+        } else {
+            return None;
         };
 
         let y = line_equation(a.pos.x, a.pos.x, a.pos.y, b.pos.x, b.pos.y);
 
-        return Point {
-            pos: vec2(a.pos.x, y),
-        };
+        return Some(Point::new(a.pos.x, y));
     }
 
     let ux = (a.pos.x * a.pos.x + a.pos.y * a.pos.y) * (b.pos.y - c.pos.y)
@@ -1177,9 +1200,7 @@ fn circumcenter(a: Point, b: Point, c: Point) -> Point {
         + (b.pos.x * b.pos.x + b.pos.y * b.pos.y) * (a.pos.x - c.pos.x)
         + (c.pos.x * c.pos.x + c.pos.y * c.pos.y) * (b.pos.x - a.pos.x);
 
-    Point {
-        pos: vec2(ux / d, uy / d),
-    }
+    Some(Point::new(ux / d, uy / d))
 }
 
 async fn draw_diagram(view: Rect, cells: &[Cell], sites: &[Point]) {
