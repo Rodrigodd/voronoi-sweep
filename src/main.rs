@@ -974,8 +974,6 @@ impl Bisector {
         let t1 = (y * (-dy + y)).sqrt();
         let t2 = (dx2 + dy2).sqrt();
 
-        dbg!(dx, dy, y, t1, t2);
-
         // If we are on `cqs-` or `cqs+`, we choose the corresponding solution.
         let bisector_star_x = if (point.pos.x < a.pos.x) == (dy > 0.0) {
             a.pos.x + (dx * y - t1 * t2) / dy
@@ -1080,8 +1078,19 @@ impl Bisector {
             + qy2 * rx
             - qy2 * sx;
 
-        let x = nx / d;
+        let mut x = nx / d;
         let y = ny / d;
+
+        // If the intersection lies outside the domain of the bisectors, but `other` has origin in
+        // a point to the right of this bisector, and move it to inside the domain, because that
+        // intersection should happen.
+        if self.max_x.is_finite() && other.min_x.is_finite() {
+            if x == self.max_x {
+                if other.star_cmp(sites, sites[self.a as usize]) == std::cmp::Ordering::Greater {
+                    x = f32_next_down(x);
+                }
+            }
+        }
 
         if x < self.min_x || x >= self.max_x || x < other.min_x || x >= other.max_x {
             debugln!(
@@ -1309,6 +1318,29 @@ fn f32_next_up(x: f32) -> f32 {
         bits + 1
     } else {
         bits - 1
+    };
+    f32::from_bits(next_bits)
+}
+
+/// From https://github.com/rust-lang/rust/pull/100578
+fn f32_next_down(x: f32) -> f32 {
+    // We must use strictly integer arithmetic to prevent denormals from
+    // flushing to zero after an arithmetic operation on some platforms.
+    const NEG_TINY_BITS: u32 = 0x8000_0001; // Smallest (in magnitude) negative f32.
+    const CLEAR_SIGN_MASK: u32 = 0x7fff_ffff;
+
+    let bits = x.to_bits();
+    if x.is_nan() || bits == f32::NEG_INFINITY.to_bits() {
+        return x;
+    }
+
+    let abs = bits & CLEAR_SIGN_MASK;
+    let next_bits = if abs == 0 {
+        NEG_TINY_BITS
+    } else if bits == abs {
+        bits - 1
+    } else {
+        bits + 1
     };
     f32::from_bits(next_bits)
 }
