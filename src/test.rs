@@ -822,3 +822,49 @@ fn angle_cmp() {
     assert_eq!(a5, TAU / 4.0);
     assert!(close(a6, -TAU / 4.0));
 }
+
+#[test]
+fn bisector_cmp_vs_intersection() {
+    // If a point is at the right of a bisector*, them the interesction between that bisector and
+    // the bisector passing through this point should be at the left of the point, never
+    // coincident.
+    let mut runner = TestRunner::default();
+    runner
+        .run(&((-10i32..0, -10i32..0), (0i32..10, 0i32..10)), |(a, c)| {
+            bisector_cmp_vs_intersection_(a, c);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn bisector_cmp_vs_intersection1() {
+    bisector_cmp_vs_intersection_((-3, -3), (9, 3));
+}
+
+fn bisector_cmp_vs_intersection_(a: (i32, i32), c: (i32, i32)) {
+    let a = Point::new(a.0 as f32, a.1 as f32);
+    let b = Point::new(0.0, 0.0);
+    let c = Point::new(c.0 as f32, c.1 as f32);
+
+    let sites = &[a, b, c];
+
+    let ab = Bisector::new(sites, 0, 1);
+    let ac = Bisector::new(sites, 0, 2);
+
+    if ab.c_plus(sites).star_cmp(sites, c) == std::cmp::Ordering::Less {
+        return;
+    }
+
+    let p = ac
+        .c_minus(sites)
+        .star_intersection(sites, ab.c_plus(sites))
+        .unwrap();
+
+    debugln!("a: {:?}", a);
+    debugln!("b: {:?}", b);
+    debugln!("c: {:?}", c);
+    debugln!("p: {:?}", p);
+
+    assert!(p.pos.x < c.pos.x);
+}
