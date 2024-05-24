@@ -462,6 +462,11 @@ fn diagram_fuzz14() {
     diagram_fuzz_(vec![(0, 0), (1, 2), (0, 3), (1, 4)]);
 }
 
+#[test]
+fn diagram_fuzz15() {
+    diagram_fuzz_(vec![(-13, -11), (4, -4), (0, 2), (-5, 3)]);
+}
+
 fn diagram_fuzz_(points: Vec<(i32, i32)>) {
     let mut sites = points
         .into_iter()

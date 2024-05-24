@@ -1084,7 +1084,7 @@ impl Bisector {
         // If the intersection lies outside the domain of the bisectors, but `other` has origin in
         // a point to the right of this bisector, and move it to inside the domain, because that
         // intersection should happen.
-        if self.max_x.is_finite() && other.min_x.is_finite() {
+        if self.max_x.is_finite() {
             if x == self.max_x {
                 if other.star_cmp(sites, sites[self.a as usize]) == std::cmp::Ordering::Greater {
                     x = f32_next_down(x);
