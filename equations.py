@@ -2,8 +2,29 @@
 Sympy code used to derive some expressions used in the implementation.
 """
 
-from sympy import symbols, Eq, simplify, expand, solve, collect, bottom_up, Number, S, poly, nonlinsolve, plot, sqrt
+from sympy import symbols, Eq, simplify, expand, solve, collect, bottom_up, Number, S, poly, nonlinsolve, plot, sqrt, cse
+import sympy as sp
 from pprint import pprint
+
+def cse_to_c_code(expression):
+    # Perform CSE on the given expression
+    replacements, reduced_expr = sp.cse(list(expression))
+
+    print('replacements:', replacements)
+    print('reduced_expr:', reduced_expr)
+    
+    # Generate C code for the replacements (subexpressions)
+    c_code_lines = []
+    for var, subexpr in replacements:
+        c_code_lines.append(f"double {var} = {sp.ccode(subexpr)};")
+    
+    # Generate C code for the final expression
+    c_code_lines.append(f"double x = {sp.ccode(reduced_expr[0])};")
+    c_code_lines.append(f"double y = {sp.ccode(reduced_expr[1])};")
+    
+    # Combine all lines into the final C code string
+    c_code = "\n".join(c_code_lines)
+    return c_code
 
 def dist(p, x, y):
     px, py = p
@@ -56,6 +77,10 @@ def bisectors_intersection():
 
     print('intersection', intersection)
 
+    ccode = cse_to_c_code(intersection[0])
+
+    print('ccode:', ccode)
+
 def bisector_star_compare():
     """
     Given the star-map of a bisector, check if a point is above or below the bisector
@@ -82,5 +107,27 @@ def bisector_star_compare():
     # check if the point is above or below the bisector
     print('cmp:', cmp)
 
+def bisector_star_at_y():
+    """
+    Give the star-map of a bisector, find the x-coordinate of the bisector at a given y-coordinate
+    """
+    x, y = symbols('x y', real=True)
+    dx, dy = symbols('dx dy', real=True)
+    py = symbols('py', real=True)
+
+    bpq = bisector((dx, dy), (0, 0), x, y)
+
+    # star-map of the bisector
+    star_map_bpq = star_map(bpq, (0, 0), x, y)
+
+    print('star_map_bpq:', star_map_bpq)
+
+    star_bx = solve(star_map_bpq.subs({y: py}), x)
+
+    print('bx:', star_bx[0])
+    print('bx:', star_bx[1])
+
+
 # bisectors_intersection()
-bisector_star_compare()
+# bisector_star_compare()
+bisector_star_at_y()
