@@ -380,6 +380,32 @@ fn diagram_fuzz_dup_11() {
 }
 
 #[test]
+fn diagram_fuzz_dup_12() {
+    let points = vec![
+        Point::new(0.0, -7.0),
+        Point::new(4.0, -5.0),
+        Point::new(8.0, 13.0),
+        Point::new(-2.0, 18.0),
+        Point::new(-2.0, 18.0),
+    ];
+
+    diagram_fuzz_points(points);
+}
+
+#[test]
+fn diagram_fuzz_dup_13() {
+    let points = vec![
+        Point::new(20.0, 22.0),
+        Point::new(8.0, 23.0),
+        Point::new(8.0, 23.0),
+        Point::new(-24.0, 26.0),
+        Point::new(-19.0, 10.0),
+    ];
+
+    diagram_fuzz_points(points);
+}
+
+#[test]
 fn diagram_fuzz1() {
     diagram_fuzz_(vec![(2, 0), (0, 1), (4, 1), (2, 2)])
 }
@@ -525,6 +551,9 @@ fn diagram_fuzz_points(sites: Vec<Point>) {
 
             assert!(close(dist_p, dist_neigh));
         }
+
+        // the cell should be convex
+        assert!(cell.is_convex());
     }
 }
 

@@ -800,6 +800,49 @@ impl Cell {
             point
         );
     }
+
+    #[cfg(test)]
+    /// Check if the cell is convex. It should be.
+    fn is_convex(&self) -> bool {
+        let n = self.neighbors.len();
+        if n < 3 {
+            return true;
+        }
+
+        for i in 0..n {
+            let a = self.points[i];
+            let b = self.points[(i + 1) % n];
+            let c = self.points[(i + 2) % n];
+
+            let ab = b.pos - a.pos;
+            let bc = c.pos - b.pos;
+
+            // ab x bc = sin(θ) * |ab| * |bc|
+            // (θ >= 0) <-> (ab x bc >= 0)
+            let cross = ab.x * bc.y - ab.y * bc.x;
+            let dot = ab.x * bc.x + ab.y * bc.y;
+
+            debugln!(
+                "{}: cross {} = {} x {} ({})",
+                i,
+                cross,
+                b.pos - a.pos,
+                c.pos - b.pos,
+                dot
+            );
+
+            // If the cell is not closed, some of the points will be NaN. Ignore them.
+            if cross.is_nan() {
+                continue;
+            }
+
+            if cross < -dot.abs() * 1e-3 {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 /// A segment of the bisector of two sites.
