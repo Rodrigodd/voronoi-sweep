@@ -6,7 +6,7 @@ use proptest::test_runner::TestRunner;
 use rand::{seq::SliceRandom, Rng};
 
 fn close(a: f32, b: f32) -> bool {
-    (a - b).abs() < (a + b).abs() * 2e-5
+    (a - b).abs() <= (a + b).abs() * 2e-5
 }
 
 #[test]
