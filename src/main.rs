@@ -11,7 +11,7 @@ mod test;
 #[macro_export]
 macro_rules! debugln {
     ($($arg:tt)*) => {
-        println!($($arg)*)
+        // println!($($arg)*)
     };
 }
 

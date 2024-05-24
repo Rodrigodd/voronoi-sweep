@@ -207,8 +207,8 @@ fn diagram_fuzz() {
 
     // all representable integers floats
     // let i = -(1 << 23)..(1 << 23);
-    let i = -0..6;
-    let points = proptest::collection::vec((i.clone(), i), 0..8);
+    let i = -64..64;
+    let points = proptest::collection::vec((i.clone(), i), 0..32);
 
     runner
         .run(&points, |points| {
@@ -223,8 +223,8 @@ fn diagram_fuzz() {
 fn diagram_fuzz_dup() {
     let mut runner = TestRunner::default();
 
-    let i = 0..10i32;
-    let points = proptest::collection::vec((i.clone(), i), 0..16);
+    let i = -32..32i32;
+    let points = proptest::collection::vec((i.clone(), i), 0..32);
 
     runner
         .run(&points, |points| {
