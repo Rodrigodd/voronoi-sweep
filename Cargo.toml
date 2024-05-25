@@ -1,13 +1,1 @@
-[package]
-name = "fortune-anim"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-macroquad = "0.4.5"
-proptest = "1.4.0"
-
-[dev-dependencies]
-rand = "0.8.5"
+workspace = { members = ["fortune-anim", "voronoi-sweep"] }

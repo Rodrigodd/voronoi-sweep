@@ -1,6 +1,6 @@
 use std::ops::Not;
 
-use super::{circumcenter, debugln, dist, fortune_algorithm, vec2, Bisector, Cell, Point, SiteIdx};
+use super::{circumcenter, debugln, dist, fortune_algorithm, Bisector, Cell, Point, SiteIdx};
 use proptest::prelude::*;
 use proptest::test_runner::TestRunner;
 use rand::{seq::SliceRandom, Rng};
@@ -23,7 +23,7 @@ fn bisector_intersection() {
 
     let p = ad.intersection(sites, bc).unwrap();
 
-    assert_eq!(p.pos, vec2(0.5, 0.5));
+    assert_eq!(p, Point::new(0.5, 0.5));
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn bisector_cmp1() {
 
     let bpq = Bisector::new(sites, 0, 1).c_plus(sites);
 
-    let y = bpq.y_star_at(sites, r.pos.x);
+    let y = bpq.y_star_at(sites, r.x);
 
     debugln!("y: {}", y);
 
@@ -633,17 +633,17 @@ fn bisector_y_at(a: (u8, u8), b: (u8, u8)) -> bool {
 
     let sites = &[p, q];
 
-    if p.pos.y == q.pos.y {
+    if p.y == q.y {
         return true;
     }
 
     let bisector = Bisector::new(sites, 0, 1);
 
-    let mean = (p.pos + q.pos) / 2.0;
+    let mean = (p + q) * 0.5;
 
     let y_at = bisector.y_at(sites, mean.x);
 
-    debugln!("a: {:?}, b: {:?}, mean: {}, y_at: {}", a, b, mean, y_at);
+    debugln!("a: {:?}, b: {:?}, mean: {:?}, y_at: {}", a, b, mean, y_at);
 
     close(y_at, mean.y)
 }
@@ -674,7 +674,7 @@ fn y_star_at() {
 
     let bpq = Bisector::new(sites, 0, 1);
 
-    let y_star = bpq.y_star_at(sites, r.pos.x);
+    let y_star = bpq.y_star_at(sites, r.x);
 
     debugln!("y_star: {}", y_star);
 
@@ -707,7 +707,7 @@ fn test_circumcenter(a: (u8, u8), b: (u8, u8), c: (u8, u8)) {
         sites.dedup();
         if sites.len() == 2 {
             // unless they are horizontally align
-            if sites[0].pos.y == sites[1].pos.y {
+            if sites[0].y == sites[1].y {
                 assert!(cc.is_none());
                 return;
             }
@@ -895,5 +895,5 @@ fn bisector_cmp_vs_intersection_(a: (i32, i32), c: (i32, i32)) {
     debugln!("c: {:?}", c);
     debugln!("p: {:?}", p);
 
-    assert!(p.pos.x < c.pos.x);
+    assert!(p.x < c.x);
 }

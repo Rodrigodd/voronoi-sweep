@@ -1,0 +1,11 @@
+[package]
+name = "fortune-anim"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+voronoi-sweep = { path = "../voronoi-sweep" }
+macroquad = "0.4.5"
+rand = "0.8.5"
