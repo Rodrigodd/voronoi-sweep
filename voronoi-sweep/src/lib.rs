@@ -1,4 +1,4 @@
-use std::f32::consts::TAU;
+use std::cmp::Ordering;
 
 mod heap;
 use heap::Heap;
@@ -82,12 +82,12 @@ impl std::hash::Hash for Point {
 }
 impl Eq for Point {}
 impl PartialOrd for Point {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 impl Ord for Point {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         if self.y == other.y {
             self.x.partial_cmp(&other.x).unwrap()
         } else {
@@ -164,7 +164,7 @@ impl Benchline {
         // }
 
         for (i, (_, b)) in self.regions[..self.regions.len() - 1].iter().enumerate() {
-            if b.star_cmp(sites, p) == std::cmp::Ordering::Less {
+            if b.star_cmp(sites, p) == Ordering::Less {
                 return i;
             }
         }
@@ -292,11 +292,11 @@ pub fn fortune_algorithm(
         };
         let ord = pa.cmp(&pb);
 
-        if ord == std::cmp::Ordering::Equal {
+        if ord == Ordering::Equal {
             return match (a, b) {
                 (Event::Site(a), Event::Site(b)) => a.cmp(b),
-                (Event::Site(_), Event::Intersection(_, _)) => std::cmp::Ordering::Less,
-                (Event::Intersection(_, _), Event::Site(_)) => std::cmp::Ordering::Greater,
+                (Event::Site(_), Event::Intersection(_, _)) => Ordering::Less,
+                (Event::Intersection(_, _), Event::Site(_)) => Ordering::Greater,
                 (&Event::Intersection(p1, (q, r, s)), &Event::Intersection(p2, (t, u, v))) => {
                     // If two intersections are coincident, the one which will merge to a Cqs+
                     // boundary will have priority. Otherwise, the Cqs- will remove the other
@@ -310,8 +310,8 @@ pub fn fortune_algorithm(
                     let is_plus2 = c2.min_x.is_finite();
 
                     match (is_plus1, is_plus2) {
-                        (true, false) => std::cmp::Ordering::Less,
-                        (false, true) => std::cmp::Ordering::Greater,
+                        (true, false) => Ordering::Less,
+                        (false, true) => Ordering::Greater,
                         (true, true) => (q, r, s).cmp(&(t, u, v)),
                         (false, false) => {
                             // debug_assert!(false, "this case does not happen! I think...");
@@ -656,68 +656,27 @@ pub fn fortune_algorithm(
     vertices
 }
 
-/// Angle of this vector (b-a) in relation to the x-axis, in the range [0, τ).
-fn angle(sites: &[Point], a_idx: SiteIdx, b_idx: SiteIdx) -> f32 {
-    let dx = sites[b_idx as usize].x - sites[a_idx as usize].x;
-    let dy = sites[b_idx as usize].y - sites[a_idx as usize].y;
-
-    // if the points are coincident, consider they side by side.
-    if dx == 0.0 && dy == 0.0 {
-        if a_idx < b_idx {
-            return 0.0;
-        } else {
-            return TAU / 2.0;
-        }
-    }
-
-    let x = dy.atan2(dx);
-
-    if x < 0.0 {
-        x + TAU
-    } else {
-        x
-    }
-}
-
-/// Return the angle between the vectors `o->a` and `o->b`, in the range [-π, π). Is positive if the
-/// smallest rotation from `o->a` to `o->b` is in the orientation of `x` to `y`.
+/// Compare the polar angle of the vectors `a` and `b` in relation to the x-axis, in the  range [0,
+/// τ) Return if the polar angle of `a` is less, equal or greater than of `b`.
 ///
-/// if `a` and `b` are coincident, the one with the smaller index is considered to be to the left
-/// of the other, and +0.0 or -0.0 is returned accordingly.
-fn angle_cmp(sites: &[Point], o: SiteIdx, a: SiteIdx, b: SiteIdx) -> f32 {
-    debug_assert!(a != b);
+/// If either `a` or `b` is a zero vector, this will return `Ordering::Equal`.
+///
+/// Based on: https://stackoverflow.com/a/39420680
+fn vec2_angle_cmp(a: Point, b: Point) -> Ordering {
+    let h_a = (a.y < 0.0) || ((a.y == 0.0) && (a.x < 0.0)); // 0 for [0,180). 1 for [180,360).
+    let h_b = (b.y < 0.0) || ((b.y == 0.0) && (b.x < 0.0)); // 0 for [0,180). 1 for [180,360).
 
-    let angle_a = angle(sites, o, a);
-    let angle_b = angle(sites, o, b);
-
-    debugln!(
-        "{}: angle_cmp {:?} {:?} {:?} {:?} {:?}",
-        o,
-        a,
-        b,
-        angle_a,
-        angle_b,
-        angle_b - angle_a
-    );
-
-    let mut theta = angle_b - angle_a;
-
-    if theta > TAU / 2.0 {
-        theta -= TAU;
-    } else if theta <= -TAU / 2.0 {
-        theta += TAU;
+    if h_a == h_b {
+        // bxa = |b|.|a|.sin(angle from `b` to `a`, positive in orientation `+x` to `+y`)
+        let bxa = b.x * a.y - b.y * a.x;
+        return bxa.partial_cmp(&0.0).unwrap_or(Ordering::Equal);
     }
 
-    // if points are equal, consider that the point with smaller index is to the left of the
-    // other.
-    if theta == 0.0 {
-        if sites[a as usize].y > sites[o as usize].y {
-            theta = [0.0, -0.0][(b > a) as usize];
-        } else {
-            theta = [0.0, -0.0][(b < a) as usize];
-        }
+    if h_a {
+        Ordering::Greater
+    } else {
+        Ordering::Less
     }
-    theta
 }
 
 // A cell of the voronoi diagram. Contains a list of neighbors and points.
@@ -745,13 +704,10 @@ impl Cell {
 
     /// Add neighbor. Return the index where the neighbor was inserted.
     fn add_neighbor(&mut self, sites: &[Point], this_idx: SiteIdx, neighbor: SiteIdx) -> usize {
-        let angle_a = angle(sites, this_idx, neighbor);
-
         debugln!(
-            "{}: adding {:?} ({:.0}) to {:?} ({:?})",
+            "{}: adding {:?} to {:?} ({:?})",
             this_idx,
             neighbor,
-            angle_a * 360.0 / TAU,
             self.neighbors,
             self.points
         );
@@ -762,15 +718,9 @@ impl Cell {
             }
 
             let b_idx = self.neighbors[i];
-            let angle_b = angle(sites, this_idx, b_idx);
+            let ord = angle_cmp(sites, this_idx, neighbor, b_idx);
 
-            let mut theta = angle_a - angle_b;
-
-            if angle_a == angle_b {
-                theta = angle_cmp(sites, this_idx, b_idx, neighbor);
-            }
-
-            if theta.is_sign_negative() {
+            if ord.is_lt() {
                 self.neighbors.insert(i, neighbor);
                 self.points.insert(i, Point::NAN);
                 return i;
@@ -799,9 +749,29 @@ impl Cell {
         // PERF: a and b should be consecutive neighbors, so after we find one we could insert the
         // other with a single extra comparison.
 
-        let theta = angle_cmp(sites, this_idx, a_idx, b_idx);
+        let ord = {
+            let mut db = sites[b_idx as usize] - sites[this_idx as usize];
+            if db == Point::new(0.0, 0.0) {
+                if b_idx < this_idx {
+                    db.x = -1.0;
+                } else {
+                    db.x = 1.0;
+                };
+            }
+            let mut da = sites[a_idx as usize] - sites[this_idx as usize];
+            if da == Point::new(0.0, 0.0) {
+                if a_idx < this_idx {
+                    da.x = -1.0;
+                } else {
+                    da.x = 1.0;
+                };
+            }
 
-        if theta.is_sign_negative() {
+            let cross = da.x * db.y - da.y * db.x;
+            cross.partial_cmp(&0.0).unwrap_or(Ordering::Equal).reverse()
+        };
+
+        if ord.is_gt() {
             std::mem::swap(&mut a_idx, &mut b_idx);
         }
 
@@ -874,6 +844,35 @@ impl Cell {
 
         true
     }
+}
+
+fn angle_cmp(sites: &[Point], this_idx: u32, neighbor: u32, b_idx: u32) -> Ordering {
+    let mut db = sites[b_idx as usize] - sites[this_idx as usize];
+    if db == Point::new(0.0, 0.0) {
+        if b_idx < this_idx {
+            db.x = -1.0;
+        } else {
+            db.x = 1.0;
+        };
+    }
+    let mut da = sites[neighbor as usize] - sites[this_idx as usize];
+    if da == Point::new(0.0, 0.0) {
+        if neighbor < this_idx {
+            da.x = -1.0;
+        } else {
+            da.x = 1.0;
+        };
+    }
+
+    vec2_angle_cmp(da, db).then_with(|| {
+        // if they have the same direction, the one with smaller index is to the left.
+        let ord = neighbor.cmp(&b_idx);
+        if db.y > 0.0 {
+            ord.reverse()
+        } else {
+            ord
+        }
+    })
 }
 
 /// A segment of the bisector of two sites.
@@ -998,16 +997,16 @@ impl Bisector {
 
     /// Return if point is on the left side or right side of the hyperbola, obtained by the
     /// *-mapping of the bisector.
-    fn star_cmp(&self, sites: &[Point], point: Point) -> std::cmp::Ordering {
+    fn star_cmp(&self, sites: &[Point], point: Point) -> Ordering {
         let (a, b) = self.ab(sites);
 
         if point.x < self.min_x {
             debugln!("less! {} {}", point.x, self.min_x);
-            return std::cmp::Ordering::Less;
+            return Ordering::Less;
         }
         if point.x >= self.max_x {
             debugln!("great! {} {}", point.x, self.max_x);
-            return std::cmp::Ordering::Greater;
+            return Ordering::Greater;
         }
 
         if (b.y - a.y) == 0.0 {
@@ -1022,9 +1021,9 @@ impl Bisector {
                 // side (because this point index is greater).
                 .then_with(|| {
                     if point == a {
-                        std::cmp::Ordering::Greater
+                        Ordering::Greater
                     } else {
-                        std::cmp::Ordering::Less
+                        Ordering::Less
                     }
                 });
         }
@@ -1068,7 +1067,7 @@ impl Bisector {
         // if a point `q` is on the bisector, it will be on the left side, in order to Cq_+ to
         // intersect with the bisector (Cqr- would not intersect it, because it don't contain `q`
         // in its domain).
-        ord.then(std::cmp::Ordering::Less)
+        ord.then(Ordering::Less)
     }
 
     /// Returns the intersection point of two bisectors.
@@ -1153,7 +1152,7 @@ impl Bisector {
         // happen.
         if self.max_x.is_finite() {
             if x == self.max_x {
-                if other.star_cmp(sites, sites[self.a as usize]) == std::cmp::Ordering::Greater {
+                if other.star_cmp(sites, sites[self.a as usize]) == Ordering::Greater {
                     x = f32_next_down(x);
                 }
             }

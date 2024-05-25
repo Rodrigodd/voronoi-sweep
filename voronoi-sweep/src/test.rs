@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::ops::Not;
 
 use super::{circumcenter, debugln, dist, fortune_algorithm, Bisector, Cell, Point, SiteIdx};
@@ -783,44 +784,7 @@ fn test_cell() {
 }
 
 #[test]
-fn angle() {
-    use std::f32::consts::TAU;
-
-    let sites = vec![
-        Point::new(0.0, 0.0),  // 0
-        Point::new(0.0, 0.0),  // 1
-        Point::new(1.0, 0.0),  // 2
-        Point::new(0.0, 1.0),  // 3
-        Point::new(-1.0, 0.0), // 4
-        Point::new(0.0, -1.0), // 5
-    ];
-
-    let a1 = super::angle(&sites, 0, 1);
-    let a2 = super::angle(&sites, 1, 0);
-    let a3 = super::angle(&sites, 0, 2);
-    let a4 = super::angle(&sites, 0, 3);
-    let a5 = super::angle(&sites, 0, 4);
-    let a6 = super::angle(&sites, 0, 5);
-
-    debugln!("a1: {}", a1);
-    debugln!("a2: {}", a2);
-    debugln!("a3: {}", a3);
-    debugln!("a4: {}", a4);
-    debugln!("a5: {}", a5);
-    debugln!("a6: {}", a6);
-
-    assert_eq!(a1, 0.0);
-    assert_eq!(a2, TAU / 2.0);
-    assert_eq!(a3, 0.0);
-    assert_eq!(a4, TAU / 4.0);
-    assert_eq!(a5, TAU / 2.0);
-    assert_eq!(a6, TAU * 3.0 / 4.0);
-}
-
-#[test]
 fn angle_cmp() {
-    use std::f32::consts::TAU;
-
     let sites = vec![
         Point::new(0.0, 0.0),  // 0
         Point::new(0.0, 1.0),  // 1
@@ -844,12 +808,98 @@ fn angle_cmp() {
     debugln!("a5: {:?}", a5);
     debugln!("a6: {:?}", a6);
 
-    assert!(a1 == 0.0 && a1.is_sign_negative());
-    assert!(a2 == 0.0 && a2.is_sign_positive());
-    assert!(a3 == 0.0 && a3.is_sign_positive());
-    assert!(a4 == 0.0 && a4.is_sign_negative());
-    assert_eq!(a5, TAU / 4.0);
-    assert!(close(a6, -TAU / 4.0));
+    assert_eq!(a1, Ordering::Greater);
+    assert_eq!(a2, Ordering::Less);
+    assert_eq!(a3, Ordering::Less);
+    assert_eq!(a4, Ordering::Greater);
+    assert_eq!(a5, Ordering::Less);
+    assert_eq!(a6, Ordering::Less);
+}
+
+#[test]
+fn vec2_angle_cmp() {
+    let v = vec![
+        Point::new(0.0, 0.0),  // 0
+        Point::new(0.0, 1.0),  // 1
+        Point::new(0.0, 1.0),  // 2
+        Point::new(0.0, -1.0), // 3
+        Point::new(0.0, -1.0), // 4
+        Point::new(1.0, 0.0),  // 5
+    ];
+
+    let angle_cmp = |sites: &[Point], a, b| {
+        let da = sites[a as usize];
+        let db = sites[b as usize];
+
+        super::vec2_angle_cmp(da, db)
+    };
+
+    let a1 = angle_cmp(&v, 1, 2);
+    debugln!("a1: {:?}", a1);
+    let a2 = angle_cmp(&v, 2, 1);
+    debugln!("a2: {:?}", a2);
+    let a3 = angle_cmp(&v, 3, 4);
+    debugln!("a3: {:?}", a3);
+    let a4 = angle_cmp(&v, 4, 3);
+    debugln!("a4: {:?}", a4);
+    let a5 = angle_cmp(&v, 5, 1);
+    debugln!("a5: {:?}", a5);
+    let a6 = angle_cmp(&v, 5, 3);
+    debugln!("a6: {:?}", a6);
+    let a7 = angle_cmp(&v, 0, 1);
+    debugln!("a7: {:?}", a7);
+
+    assert_eq!(a1, Ordering::Equal);
+    assert_eq!(a2, Ordering::Equal);
+    assert_eq!(a3, Ordering::Equal);
+    assert_eq!(a4, Ordering::Equal);
+    assert_eq!(a5, Ordering::Less);
+    assert_eq!(a6, Ordering::Less);
+    assert_eq!(a7, Ordering::Equal);
+}
+
+proptest! {
+    #[test]
+    fn vec2_angle_cmp_fuzz(a: (u8, u8), b: (u8, u8)) {
+        let a = Point::new(a.0 as f32, a.1 as f32);
+        let b = Point::new(b.0 as f32, b.1 as f32);
+
+        let a1 = super::vec2_angle_cmp(a, b);
+        let a2 = super::vec2_angle_cmp(b, a);
+        assert_eq!(a1, a2.reverse());
+    }
+}
+
+proptest! {
+    #[test]
+    fn angle_cmp_fuzz(a: (i8, u8), b: (i8, u8), c: (i8, u8)) {
+        if a == (0,0) || b == (0,0) || c == (0,0) {
+            return Ok(());
+        }
+        angle_cmp_(a,b,c);
+    }
+}
+
+fn angle_cmp_(a: (i8, u8), b: (i8, u8), c: (i8, u8)) {
+    let z = Point::new(0.0, 0.0);
+    let a = Point::new(a.0 as f32, a.1 as f32);
+    let b = Point::new(b.0 as f32, b.1 as f32);
+    let c = Point::new(c.0 as f32, c.1 as f32);
+
+    let sites = &[z, a, b, c];
+
+    let a1 = super::angle_cmp(sites, 0, 1, 2);
+    let a2 = super::angle_cmp(sites, 0, 2, 3);
+    let a3 = super::angle_cmp(sites, 0, 1, 3);
+
+    debugln!("a1: {:?}", a1);
+    debugln!("a2: {:?}", a2);
+    debugln!("a3: {:?}", a3);
+
+    // transitivity
+    if a1.is_le() && a2.is_le() {
+        assert!(a3.is_le());
+    }
 }
 
 #[test]
