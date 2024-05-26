@@ -177,8 +177,8 @@ fn diagram() {
         &[0, 1, 2, 0],    // intersect q and r
     ];
 
-    let vertexes = fortune_algorithm(&points, &mut |benchline, _| {
-        let regions = benchline.get_regions().collect::<Vec<_>>();
+    let vertexes = fortune_algorithm(&points, &mut |benchline, _, _| {
+        let regions = benchline.get_sites().collect::<Vec<_>>();
         debugln!("regions: {:?}", regions);
         assert_eq!(regions, expected_benchline[0]);
         expected_benchline = &expected_benchline[1..];
@@ -512,7 +512,7 @@ fn diagram_fuzz_(points: Vec<(i32, i32)>) {
 fn diagram_fuzz_points(sites: Vec<Point>) {
     debugln!("{:?}", sites);
 
-    let vertexes = fortune_algorithm(&sites, &mut |_, _| {});
+    let vertexes = fortune_algorithm(&sites, &mut |_, _, _| {});
 
     for (i, (cell, &site)) in vertexes.into_iter().zip(&sites).enumerate() {
         debugln!("{}: cell {:?}", i, cell);
@@ -581,8 +581,8 @@ fn diagram1() {
         &[0, 1, 3, 2, 0],       // intersect q r s
     ];
 
-    let vertexes = fortune_algorithm(&points, &mut |benchline, _| {
-        let regions = benchline.get_regions().collect::<Vec<_>>();
+    let vertexes = fortune_algorithm(&points, &mut |benchline, _, _| {
+        let regions = benchline.get_sites().collect::<Vec<_>>();
         debugln!("regions: {:?}", regions);
         if regions != expected_benchline[0] {
             debugln!("expecte: {:?}", expected_benchline[0]);

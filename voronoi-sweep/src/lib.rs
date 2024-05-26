@@ -51,7 +51,7 @@ impl std::ops::Mul<f32> for Point {
 }
 impl Point {
     /// A Point whose x and y are both NaN.
-    const NAN: Self = Self::new(f32::NAN, f32::NAN);
+    pub const NAN: Self = Self::new(f32::NAN, f32::NAN);
 
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
@@ -105,10 +105,19 @@ pub enum Event {
     /// (p, (q, r, s)), where p is the intersection point of Cqr* and Crs*.
     Intersection(Point, (SiteIdx, SiteIdx, SiteIdx)),
 }
+impl Event {
+    // Return the position where this event happens.
+    pub fn pos(&self, sites: &[Point]) -> Point {
+        match self {
+            Event::Site(p) => sites[*p as usize],
+            Event::Intersection(p, _) => *p,
+        }
+    }
+}
 
 /// A benchline is a interleaved sequence of regions and boundaries.
 #[derive(Clone)]
-pub struct Benchline {
+pub struct Beachline {
     /// The regions and boundaries in the benchline.
     ///
     /// The regions are represented by its center point, and the boundaries are represented by
@@ -119,7 +128,7 @@ pub struct Benchline {
     /// Vec.
     regions: Vec<(SiteIdx, Bisector)>,
 }
-impl std::fmt::Debug for Benchline {
+impl std::fmt::Debug for Beachline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.regions[0..self.regions.len() - 1]
             .iter()
@@ -128,14 +137,14 @@ impl std::fmt::Debug for Benchline {
             .finish()
     }
 }
-impl Benchline {
+impl Beachline {
     fn new(first_region: SiteIdx) -> Self {
         Self {
             regions: vec![(first_region, Bisector::nill())],
         }
     }
 
-    pub fn get_regions(&self) -> impl Iterator<Item = SiteIdx> + '_ {
+    pub fn get_sites(&self) -> impl Iterator<Item = SiteIdx> + '_ {
         self.regions.iter().map(|(p, _)| *p)
     }
 
@@ -219,13 +228,19 @@ impl Benchline {
         self.regions[region_idx - 1].1 = boundary
     }
 
+    /// Return the number of regions in the benchline.
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.regions.len()
+    }
+
     /// Return the region at the given index.
-    fn get_region(&self, q_idx: usize) -> SiteIdx {
+    pub fn get_region(&self, q_idx: usize) -> SiteIdx {
         self.regions[q_idx].0
     }
 
     /// Return the right boundary of the region at the given index .
-    fn get_righ_boundary(&self, q_idx: usize) -> Option<Bisector> {
+    pub fn get_right_boundary(&self, q_idx: usize) -> Option<Bisector> {
         // the last region has no right boundary
         if q_idx == self.regions.len() - 1 {
             return None;
@@ -234,7 +249,7 @@ impl Benchline {
         Some(self.regions[q_idx].1)
     }
 
-    fn get_left_boundary(&self, q_idx: usize) -> Option<Bisector> {
+    pub fn get_left_boundary(&self, q_idx: usize) -> Option<Bisector> {
         // the first region has no left boundary
         if q_idx == 0 {
             return None;
@@ -263,7 +278,7 @@ impl Benchline {
 /// - Kenny Wong, Hausi A. Müller, An Efficient Implementation of Fortune's Plane-Sweep Algorithm for Voronoi Diagrams
 pub fn fortune_algorithm(
     sites: &[Point],
-    on_progress: &mut impl FnMut(&Benchline, &[Event]),
+    on_progress: &mut impl FnMut(&Beachline, &[Event], &[Cell]),
 ) -> Vec<Cell> {
     // Algorithm 1: Computation of V*(S).
     // Input:
@@ -278,7 +293,7 @@ pub fn fortune_algorithm(
     //  - L: a sequence (r1, c1, r2, . . . , rk) of regions (labeled by site) and boundaries
     //  (labeled by a pair of sites). Note that a region can appear many times on L.
 
-    let mut vertices = vec![Cell::new(); sites.len()];
+    let mut cells = vec![Cell::new(); sites.len()];
 
     // 1. initialize Q with all sites
     let mut events = Heap::new(|a: &Event, b: &Event| {
@@ -331,11 +346,11 @@ pub fn fortune_algorithm(
 
     // 2. p <- extract_min(Q)
     let Some(Event::Site(p)) = events.pop() else {
-        return vertices;
+        return cells;
     };
 
     // 3. L <- the list containing Rp.
-    let mut benchline = Benchline::new(p);
+    let mut benchline = Beachline::new(p);
 
     // Steps 2 and 3 make only work if there is only a single bottommost point. We can modify this
     // step a little to make it work with multiple bottommost points.
@@ -354,12 +369,12 @@ pub fn fortune_algorithm(
         benchline.regions.last_mut().unwrap().1 = Bisector::new(sites, p, q).c_plus(sites);
         benchline.regions.push((q, Bisector::nill()));
 
-        vertices[p as usize].add_neighbor(sites, p, q);
-        vertices[q as usize].add_neighbor(sites, q, p);
+        cells[p as usize].add_neighbor(sites, p, q);
+        cells[q as usize].add_neighbor(sites, q, p);
     }
     debugln!("initial benchline: {:?}", benchline);
 
-    on_progress(&benchline, events.as_slice());
+    on_progress(&benchline, events.as_slice(), &cells);
 
     // 4. while Q is not empty begin
     // 5. p <- extract min(Q)
@@ -374,8 +389,8 @@ pub fn fortune_algorithm(
                 let reg_q_idx = benchline.find_region(sites, p);
                 let q_idx = benchline.get_region(reg_q_idx);
 
-                vertices[p_idx as usize].add_neighbor(sites, p_idx, q_idx);
-                vertices[q_idx as usize].add_neighbor(sites, q_idx, p_idx);
+                cells[p_idx as usize].add_neighbor(sites, p_idx, q_idx);
+                cells[q_idx as usize].add_neighbor(sites, q_idx, p_idx);
 
                 // (added) 8.1. If p and q coincide, consider them to be side by side, adding a
                 //              vertical boundary between them. ..., Rq*, Cpq0, Rp*, Cpr, ... in
@@ -384,7 +399,7 @@ pub fn fortune_algorithm(
                     debugln!("duplicated points!!");
                     let bpq = Bisector::new(sites, p_idx, q_idx);
 
-                    let cqr = benchline.get_righ_boundary(reg_q_idx).unwrap();
+                    let cqr = benchline.get_right_boundary(reg_q_idx).unwrap();
                     benchline.split2(reg_q_idx, (bpq, p_idx));
 
                     // 8.2. Add vertex for p, q and the surrounding region
@@ -392,15 +407,15 @@ pub fn fortune_algorithm(
                     let vy = Bisector::new(sites, p_idx, r).y_at(sites, p.x);
                     let v = Point::new(p.x, vy);
                     debugln!("vertex {} {} {}: {:?}", p_idx, q_idx, r, v);
-                    vertices[p_idx as usize].add_vertex(sites, v, p_idx, q_idx, r);
-                    vertices[q_idx as usize].add_vertex(sites, v, q_idx, p_idx, r);
-                    vertices[r as usize].add_vertex(sites, v, r, p_idx, q_idx);
+                    cells[p_idx as usize].add_vertex(sites, v, p_idx, q_idx, r);
+                    cells[q_idx as usize].add_vertex(sites, v, q_idx, p_idx, r);
+                    cells[r as usize].add_vertex(sites, v, r, p_idx, q_idx);
 
                     // 8.3: Replace from Q the intersection between Cqr+ and its neighbor to the
                     //      right, with the intersection between Cpr+ and its neighbor to the right
                     //      (will be at the same point).
                     'right: {
-                        let Some(right_neighbor) = benchline.get_righ_boundary(reg_q_idx + 2)
+                        let Some(right_neighbor) = benchline.get_right_boundary(reg_q_idx + 2)
                         else {
                             break 'right;
                         };
@@ -446,7 +461,7 @@ pub fn fortune_algorithm(
                         break 'middle;
                     };
 
-                    let Some(right_neighbor) = benchline.get_righ_boundary(reg_q_idx + 2) else {
+                    let Some(right_neighbor) = benchline.get_right_boundary(reg_q_idx + 2) else {
                         break 'middle;
                     };
 
@@ -490,7 +505,7 @@ pub fn fortune_algorithm(
                 }
 
                 'right: {
-                    let Some(right_neighbor) = benchline.get_righ_boundary(reg_q_idx + 2) else {
+                    let Some(right_neighbor) = benchline.get_right_boundary(reg_q_idx + 2) else {
                         break 'right;
                     };
 
@@ -524,7 +539,7 @@ pub fn fortune_algorithm(
                 let cqs = Bisector::c_merge(sites, p, q_idx, r_idx, s_idx);
                 let cqr = benchline.get_left_boundary(region_r_idx).unwrap();
 
-                let crs = benchline.get_righ_boundary(region_r_idx).unwrap();
+                let crs = benchline.get_right_boundary(region_r_idx).unwrap();
 
                 benchline.merge(region_r_idx, cqs);
 
@@ -554,7 +569,7 @@ pub fn fortune_algorithm(
                 }
 
                 'right: {
-                    let Some(right_neighbor) = benchline.get_righ_boundary(region_r_idx) else {
+                    let Some(right_neighbor) = benchline.get_right_boundary(region_r_idx) else {
                         break 'right;
                     };
 
@@ -617,7 +632,8 @@ pub fn fortune_algorithm(
                 }
 
                 'right: {
-                    let Some(mut right_neighbor) = benchline.get_righ_boundary(region_r_idx) else {
+                    let Some(mut right_neighbor) = benchline.get_right_boundary(region_r_idx)
+                    else {
                         break 'right;
                     };
 
@@ -644,16 +660,16 @@ pub fn fortune_algorithm(
                 let p_unstar = circumcenter(q, r, s).unwrap();
                 debugln!("circuncenter of {:?} {:?} {:?}: {:?}", q, r, s, p_unstar);
                 debugln!("vertex {} {} {}: {:?}", q_idx, r_idx, s_idx, p_unstar);
-                vertices[q_idx as usize].add_vertex(sites, p_unstar, q_idx, r_idx, s_idx);
-                vertices[r_idx as usize].add_vertex(sites, p_unstar, r_idx, q_idx, s_idx);
-                vertices[s_idx as usize].add_vertex(sites, p_unstar, s_idx, q_idx, r_idx);
+                cells[q_idx as usize].add_vertex(sites, p_unstar, q_idx, r_idx, s_idx);
+                cells[r_idx as usize].add_vertex(sites, p_unstar, r_idx, q_idx, s_idx);
+                cells[s_idx as usize].add_vertex(sites, p_unstar, s_idx, q_idx, r_idx);
             }
         }
-        on_progress(&benchline, events.as_slice());
+        on_progress(&benchline, events.as_slice(), &cells);
     }
 
     // 20. end
-    vertices
+    cells
 }
 
 /// Compare the polar angle of the vectors `a` and `b` in relation to the x-axis, in the  range [0,
@@ -1063,6 +1079,11 @@ impl Bisector {
         let dx = b.x - a.x;
         let dy = b.y - a.y;
         let y = y - a.y;
+
+        if dy == 0.0 {
+            // vertical boundary
+            return (a.x + b.x) / 2.0;
+        }
 
         let dx2 = dx * dx;
         let dy2 = dy * dy;

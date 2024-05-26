@@ -8,7 +8,7 @@ fn random_points() {
         .collect::<Vec<_>>();
 
     for _ in 0..100 {
-        fortune_algorithm(&sites, &mut |_, _| {});
+        fortune_algorithm(&sites, &mut |_, _, _| {});
     }
 }
 
