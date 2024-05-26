@@ -1028,24 +1028,9 @@ impl Bisector {
                 });
         }
 
-        // Calculates the intersection point of the bisector* with the vertical line that pass
+        // Calculates the intersection point of the bisector* with the horizontal line that pass
         // through `point`. Then check if it is to the left or to the right.
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
-        let y = point.y - a.y;
-
-        let dx2 = dx * dx;
-        let dy2 = dy * dy;
-
-        let t1 = (y * (-dy + y)).sqrt();
-        let t2 = (dx2 + dy2).sqrt();
-
-        // If we are on `cqs-` or `cqs+`, we choose the corresponding solution.
-        let bisector_star_x = if (point.x < a.x) == (dy > 0.0) {
-            a.x + (dx * y - t1 * t2) / dy
-        } else {
-            a.x + (dx * y + t1 * t2) / dy
-        };
+        let bisector_star_x = self.x_at_y_star(sites, point.y);
 
         debugln!("{} <=> {} ({})", point.x, bisector_star_x, a.x);
 
@@ -1068,6 +1053,29 @@ impl Bisector {
         // intersect with the bisector (Cqr- would not intersect it, because it don't contain `q`
         // in its domain).
         ord.then(Ordering::Less)
+    }
+
+    /// Calculates the intersection point of the bisector* with the horizontal line at the given y
+    /// coordinate.
+    pub fn x_at_y_star(&self, sites: &[Point], y: f32) -> f32 {
+        let (a, b) = self.ab(sites);
+
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let y = y - a.y;
+
+        let dx2 = dx * dx;
+        let dy2 = dy * dy;
+
+        let t1 = (y * (-dy + y)).sqrt();
+        let t2 = (dx2 + dy2).sqrt();
+
+        // If we are on `cqs-` or `cqs+`, we choose the corresponding solution.
+        if (self.min_x.is_finite()) == (dy > 0.0) {
+            a.x + (dx * y + t1 * t2) / dy
+        } else {
+            a.x + (dx * y - t1 * t2) / dy
+        }
     }
 
     /// Returns the intersection point of two bisectors.
