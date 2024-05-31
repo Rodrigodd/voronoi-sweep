@@ -165,7 +165,7 @@ impl Beachline {
     /// the search can return the region on either side of the boundary. Note that the actual
     /// x-coordinate where a boundary intersects the horizontal line is determined by the
     /// y-coordinate of the line.
-    fn find_region(&self, sites: &[Point], p: Point) -> usize {
+    pub fn find_region(&self, sites: &[Point], p: Point) -> usize {
         // debug print
         // debugln!("find_region for {:?}", p);
         // for (r, b) in self.regions.iter() {
@@ -182,7 +182,7 @@ impl Beachline {
     }
 
     /// Find the index of region `r`, whose neighbors are `q` and `s`.
-    fn find_region3(&self, q: SiteIdx, r: SiteIdx, s: SiteIdx) -> usize {
+    pub fn find_region3(&self, q: SiteIdx, r: SiteIdx, s: SiteIdx) -> Option<usize> {
         debugln!("find_region3 {:?} {:?} {:?}", q, r, s);
         // for (r, b) in self.regions.iter() {
         //     debugln!("{:?}, {:?},{:?}", r, b.a, b.b);
@@ -190,11 +190,11 @@ impl Beachline {
 
         for (i, window) in self.regions.windows(3).enumerate() {
             if q == window[0].0 && r == window[1].0 && s == window[2].0 {
-                return i + 1;
+                return Some(i + 1);
             }
         }
 
-        unreachable!()
+        None
     }
 
     /// Insert a new region at the exactly right of the region at the given index.
@@ -534,7 +534,7 @@ pub fn fortune_algorithm(
                 // 15. Create the bisector Bqs*.
                 // 16. Update list L so it contains Cqs = Cqs- or Cqs+,as appropriate, instead of Cqr, R*r, Crs.
 
-                let region_r_idx = benchline.find_region3(q_idx, r_idx, s_idx);
+                let region_r_idx = benchline.find_region3(q_idx, r_idx, s_idx).unwrap();
 
                 let cqs = Bisector::c_merge(sites, p, q_idx, r_idx, s_idx);
                 let cqr = benchline.get_left_boundary(region_r_idx).unwrap();
@@ -678,7 +678,7 @@ pub fn fortune_algorithm(
 /// If either `a` or `b` is a zero vector, this will return `Ordering::Equal`.
 ///
 /// Based on: https://stackoverflow.com/a/39420680
-fn vec2_angle_cmp(a: Point, b: Point) -> Ordering {
+pub fn vec2_angle_cmp(a: Point, b: Point) -> Ordering {
     let h_a = (a.y < 0.0) || ((a.y == 0.0) && (a.x < 0.0)); // 0 for [0,180). 1 for [180,360).
     let h_b = (b.y < 0.0) || ((b.y == 0.0) && (b.x < 0.0)); // 0 for [0,180). 1 for [180,360).
 
@@ -706,8 +706,8 @@ pub struct Cell {
     pub neighbors: Vec<SiteIdx>,
     /// The points where the edges of the cell intersect.
     ///
-    /// The first point is the intersection of the mediatriz of the first neighbor with the second
-    /// neighbor, and so on.
+    /// The nth-point is the intersection of the mediatriz of the nth-neighbor with the mediatriz
+    /// of the (n+1)th-neighbor. n+1 wraps around.
     pub points: Vec<Point>,
 }
 impl Cell {
@@ -1097,6 +1097,12 @@ impl Bisector {
         } else {
             a.x + (dx * y - t1 * t2) / dy
         }
+    }
+
+    /// Calculates the intersection point of the bisector with the horizontal line at the given y.
+    pub fn x_at_y(&self, sites: &[Point], y: f32) -> f32 {
+        let (a, b) = self.ab(sites);
+        line_equation(y, a.y, a.x, b.y, b.x)
     }
 
     /// Returns the intersection point of two bisectors.
