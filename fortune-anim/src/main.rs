@@ -2,9 +2,17 @@ use macroquad::prelude::*;
 
 use voronoi_sweep::{fortune_algorithm, Beachline, Bisector, Cell, Event, Point, SiteIdx};
 
-const FREEZE_DELAY: f32 = 0.1;
+#[derive(PartialEq, Debug, Clone)]
+enum AnimState {
+    Running,
+    TransitionPrelude { delay: f32, pos: Point },
+    TransitionPostlude { delay: f32, pos: Point },
+}
 
 struct Style {
+    prelude_delay: f32,
+    postlude_delay: f32,
+    sweepline_speed: f32,
     cell_colors: Vec<Color>,
     cell_border_thickness: f32,
     cell_border_color: Color,
@@ -26,6 +34,9 @@ struct Style {
 #[inline_tweak::tweak_fn]
 fn s() -> Style {
     Style {
+        prelude_delay: 0.2,
+        postlude_delay: 0.2,
+        sweepline_speed: 0.5,
         cell_colors: [
             0x249200, //
             0x499D12, //
@@ -90,7 +101,7 @@ async fn main_() {
         points.dedup();
     }
 
-    // let points = [(0, 0), (10, 1), (8, 6), (0, 10)];
+    // let points = [(0, 0), (1, 1), (2, 2), (3, 3)];
 
     let bounds = points
         .iter()
@@ -110,7 +121,7 @@ async fn main_() {
         .map(|(x, y)| {
             Point::new(
                 width * ((x - bounds.0) as f32 + offset_x) / side,
-                height * (y - bounds.1) as f32 / side,
+                height * ((y - bounds.1) as f32) / side,
             )
         })
         .collect::<Vec<_>>();
@@ -131,7 +142,6 @@ async fn main_() {
     };
 
     let mut step = 0;
-    let (mut benchline, mut events, mut cells) = steps[0].clone();
 
     let bottom_left = camera.screen_to_world(vec2(0.0, 0.0));
     let top_right = camera.screen_to_world(vec2(screen_width(), screen_height()));
@@ -145,18 +155,18 @@ async fn main_() {
     // let mut cells = None;
 
     let mut sweepline = 0.0;
-    let mut freeze = 0.0;
     let mut paused = false;
 
+    let mut anim_state = AnimState::Running;
+
     loop {
+        let s = s();
+
         if is_key_pressed(KeyCode::Q) {
             return;
         }
         if is_key_pressed(KeyCode::R) {
-            step = 0;
-            (benchline, events, cells) = steps[0].clone();
-            sweepline = 0.0;
-            freeze = 0.0;
+            reset(&mut step, &steps, &mut sweepline, sites);
         }
 
         if mouse_wheel().1 != 0.0 {
@@ -167,64 +177,121 @@ async fn main_() {
             }
         }
 
-        if !paused {
-            if freeze > 0.0 {
-                freeze -= get_frame_time();
-            }
-            if freeze <= 0.0 {
-                sweepline += get_frame_time() * 0.5;
-            }
-        }
-
         if is_key_pressed(KeyCode::Space) {
             paused = !paused;
         }
 
         if is_key_pressed(KeyCode::Left) {
-            if let Some(b) = steps.get(step - 2) {
-                step -= 2;
-                sweepline = events[0].pos(sites).y;
-                (benchline, events, cells) = b.clone();
-            } else {
-                cells = diagram.clone();
-                events.clear();
-                println!("cells: {:?}", cells);
-            }
-            freeze = FREEZE_DELAY;
+            set_state(
+                &steps,
+                step.saturating_sub(2),
+                &mut step,
+                &mut sweepline,
+                sites,
+            );
+            anim_state = AnimState::TransitionPrelude {
+                delay: s.prelude_delay,
+                pos: steps[step].1.first().unwrap().pos(sites),
+            };
         }
 
-        if is_key_pressed(KeyCode::Right)
-            || events.first().is_some_and(|e| e.pos(sites).y < sweepline)
-        {
-            freeze = FREEZE_DELAY;
-            if let Some(b) = steps.get(step + 1) {
-                step += 1;
-                sweepline = events[0].pos(sites).y;
-                (benchline, events, cells) = b.clone();
-            } else {
-                cells = diagram.clone();
-                events.clear();
-                println!("cells: {:?}", cells);
-            }
+        if is_key_pressed(KeyCode::Right) {
+            sweepline = steps[step].1.first().unwrap().pos(sites).y;
         }
 
-        let s = s();
+        match &mut anim_state {
+            AnimState::Running => {
+                sweepline += get_frame_time() * s.sweepline_speed;
+                if steps[step]
+                    .1
+                    .first()
+                    .is_some_and(|e| e.pos(sites).y <= sweepline)
+                {
+                    sweepline = steps[step].1.first().unwrap().pos(sites).y;
+                    anim_state = AnimState::TransitionPrelude {
+                        delay: s.prelude_delay,
+                        pos: steps[step].1.first().unwrap().pos(sites),
+                    };
+                }
+            }
+            AnimState::TransitionPrelude { delay, pos } => {
+                *delay -= get_frame_time();
+                if *delay <= 0.0 {
+                    set_state(&steps, step + 1, &mut step, &mut sweepline, sites);
+                    anim_state = AnimState::TransitionPostlude {
+                        delay: s.postlude_delay,
+                        pos: *pos,
+                    }
+                }
+            }
+            AnimState::TransitionPostlude { delay, pos } => {
+                *delay -= get_frame_time();
+                if *delay <= 0.0 {
+                    sweepline = pos.y;
+                    anim_state = AnimState::Running;
+                }
+            }
+        }
 
         clear_background(s.background_color);
 
+        let (beachline, events, cells) = steps.get(step).unwrap_or_else(|| steps.last().unwrap());
         draw_animation(
-            &camera, view, &cells, sites, &benchline, sweepline, s, &events,
+            &camera,
+            view,
+            cells,
+            sites,
+            beachline,
+            sweepline,
+            s,
+            events,
+            anim_state.clone(),
         );
-        draw_ui();
+        draw_ui(anim_state.clone());
 
         next_frame().await
     }
 }
 
-fn draw_ui() {
+fn set_state(
+    steps: &[(Beachline, Vec<Event>, Vec<Cell>)],
+    index: usize,
+    step: &mut usize,
+    sweepline: &mut f32,
+    sites: &[Point],
+) {
+    if index == 0 {
+        *step = 0;
+        *sweepline = 0.0;
+    } else if index < steps.len() {
+        *step = index;
+        *sweepline = steps[index.saturating_sub(1)].1[0].pos(sites).y
+    } else {
+        *step = steps.len() - 1;
+        *sweepline = steps[index].1[0].pos(sites).y
+    }
+}
+
+fn reset(
+    step: &mut usize,
+    steps: &[(Beachline, Vec<Event>, Vec<Cell>)],
+    sweepline: &mut f32,
+    sites: &[Point],
+) {
+    set_state(steps, 0, step, sweepline, sites);
+}
+
+fn draw_ui(anim_state: AnimState) {
     set_default_camera();
     let fps = get_fps();
     draw_text(&format!("FPS: {:.2}", fps), 10.0, 10.0, 20.0, BLACK);
+    draw_text(
+        &format!("Transition time: {:.2?}", anim_state),
+        10.0,
+        30.0,
+        20.0,
+        BLACK,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -237,6 +304,7 @@ fn draw_animation(
     sweepline: f32,
     s: Style,
     events: &[Event],
+    anim_state: AnimState,
 ) {
     set_camera(camera);
 
@@ -278,6 +346,12 @@ fn draw_animation(
                 draw_circle(p.x, p.y, s.event_thickness, s.event_color);
             }
         }
+    }
+
+    if let AnimState::TransitionPrelude { pos, .. } | AnimState::TransitionPostlude { pos, .. } =
+        anim_state
+    {
+        draw_circle_lines(pos.x, pos.y, 0.15, 0.03, RED);
     }
 }
 
