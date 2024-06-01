@@ -509,6 +509,7 @@ fn diagram_fuzz_(points: Vec<(i32, i32)>) {
     diagram_fuzz_points(sites);
 }
 
+#[allow(clippy::len_zero)]
 fn diagram_fuzz_points(sites: Vec<Point>) {
     debugln!("{:?}", sites);
 

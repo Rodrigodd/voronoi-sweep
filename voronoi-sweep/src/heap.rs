@@ -59,6 +59,7 @@ impl<T, F: Fn(&T, &T) -> Ordering> Heap<T, F> {
         self.data.first()
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.data.len()
     }

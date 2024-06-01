@@ -9,7 +9,9 @@ mod test;
 #[macro_export]
 macro_rules! debugln {
     ($($arg:tt)*) => {
-        // println!($($arg)*)
+        if false {
+            println!($($arg)*)
+        }
     };
 }
 
@@ -1185,12 +1187,11 @@ impl Bisector {
         // If the intersection lies outside the domain of `other`, but `self` has origin in a point
         // to the right of `other`, and it inside the domain, because that intersection should
         // happen.
-        if self.max_x.is_finite() {
-            if x == self.max_x {
-                if other.star_cmp(sites, sites[self.a as usize]) == Ordering::Greater {
-                    x = f32_next_down(x);
-                }
-            }
+        if self.max_x.is_finite()
+            && x == self.max_x
+            && other.star_cmp(sites, sites[self.a as usize]) == Ordering::Greater
+        {
+            x = f32_next_down(x);
         }
 
         if x < self.min_x || x >= self.max_x || x < other.min_x || x >= other.max_x {

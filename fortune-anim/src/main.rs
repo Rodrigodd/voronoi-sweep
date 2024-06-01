@@ -79,7 +79,7 @@ async fn main_() {
 
     let (steps, diagram) = {
         let mut steps = Vec::new();
-        let diagram = fortune_algorithm(&sites, &mut |benchline, events, cells| {
+        let diagram = fortune_algorithm(sites, &mut |benchline, events, cells| {
             steps.push((benchline.clone(), events.to_vec(), cells.to_vec()));
         });
 
@@ -187,10 +187,8 @@ async fn main_() {
 
         for i in 0..benchline.len() {
             let p_idx = benchline.get_region(i);
-            let p = sites[p_idx as usize];
             let left = benchline.get_left_boundary(i);
             let right = benchline.get_right_boundary(i);
-            // draw_circle(p.x, p.y, 0.05, GREEN);
             draw_parabola(view, sites, p_idx, sweepline, left, right);
         }
 
@@ -244,11 +242,11 @@ fn draw_parabola(
         return;
     }
 
-    let mut left = left_boundary
+    let left = left_boundary
         .map(|b| b.x_at_y_star(sites, sweepline))
         .unwrap_or(f32::NEG_INFINITY)
         .max(view.left());
-    let mut right = right_boundary
+    let right = right_boundary
         .map(|b| b.x_at_y_star(sites, sweepline))
         .unwrap_or(f32::INFINITY)
         .min(view.right());
