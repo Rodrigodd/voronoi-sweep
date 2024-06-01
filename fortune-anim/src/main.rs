@@ -2,19 +2,57 @@ use macroquad::prelude::*;
 
 use voronoi_sweep::{fortune_algorithm, Beachline, Bisector, Cell, Event, Point, SiteIdx};
 
-const CELL_COLORS: [Color; 10] = {
-    let mut x = [
-        RED, GREEN, BLUE, YELLOW, PURPLE, ORANGE, PINK, VIOLET, BROWN, DARKBLUE,
-    ];
-    let mut i = 0;
-    while i < x.len() {
-        x[i].a = 0.5;
-        i += 1;
-    }
-    x
-};
-
 const FREEZE_DELAY: f32 = 0.1;
+
+struct Style {
+    cell_colors: Vec<Color>,
+    cell_border_thickness: f32,
+    cell_border_color: Color,
+    parabola_thickness: f32,
+    parabola_color: Color,
+    sweepline_thickness: f32,
+    sweepline_color: Color,
+    hyperbola_thickness: f32,
+    hyperbola_color: Color,
+    hyperbola_dot_thickness: f32,
+    hyperbola_dot_color: Color,
+    event_thickness: f32,
+    event_color: Color,
+    site_thickness: f32,
+    site_color: Color,
+    background_color: Color,
+}
+
+#[inline_tweak::tweak_fn]
+fn s() -> Style {
+    Style {
+        cell_colors: [
+            0x249200, //
+            0x499D12, //
+            0x5CA21B, //
+            0x6EA824, //
+            0x81AD2D, //
+        ]
+        .into_iter()
+        .map(Color::from_hex)
+        .collect(),
+        cell_border_thickness: 0.02,
+        cell_border_color: Color::from_hex(0x102010),
+        parabola_thickness: 0.02,
+        parabola_color: Color::from_hex(0x001500),
+        sweepline_thickness: 0.02,
+        sweepline_color: Color::from_hex(0x000000),
+        hyperbola_thickness: 0.03,
+        hyperbola_color: Color::from_hex(0x00a320),
+        hyperbola_dot_thickness: 0.04,
+        hyperbola_dot_color: Color::from_hex(0x00a320),
+        event_thickness: 0.04,
+        event_color: Color::from_hex(0x000000),
+        site_thickness: 0.04,
+        site_color: Color::from_hex(0xd61928),
+        background_color: Color::from_hex(0x79eadd),
+    }
+}
 
 /// I put the the proc-macro in an wrapper function to workaround it breaking rust-analyzer quick
 /// actions.
@@ -44,15 +82,15 @@ async fn main_() {
             .as_secs(),
     );
 
-    while points.len() < 40 {
+    while points.len() < 15 {
         let x = rand::gen_range(-128, 127i16);
-        let y = rand::gen_range(-128, 127i16);
+        let y = rand::gen_range(-128, 80i16);
         points.push((x, y));
         points.sort();
         points.dedup();
     }
 
-    // let points = [(0, 0), (4, 2), (8, 6), (0, 10)];
+    // let points = [(0, 0), (10, 1), (8, 6), (0, 10)];
 
     let bounds = points
         .iter()
@@ -172,7 +210,9 @@ async fn main_() {
 
         set_default_camera();
 
-        clear_background(LIGHTGRAY);
+        let s = s();
+
+        clear_background(s.background_color);
 
         let fps = get_fps();
         draw_text(&format!("FPS: {:.2}", fps), 10.0, 10.0, 20.0, BLACK);
@@ -181,8 +221,17 @@ async fn main_() {
 
         draw_diagram_partial(view, &cells, sites, &benchline, sweepline);
 
+        draw_line(
+            view.left(),
+            sweepline,
+            view.right(),
+            sweepline,
+            s.sweepline_thickness,
+            s.sweepline_color,
+        );
+
         for point in sites.iter() {
-            draw_circle(point.x, point.y, 0.05, RED);
+            draw_circle(point.x, point.y, s.site_thickness, s.site_color);
         }
 
         for i in 0..benchline.len() {
@@ -192,28 +241,20 @@ async fn main_() {
             draw_parabola(view, sites, p_idx, sweepline, left, right);
         }
 
-        let mut hyperbola_colors = [GREEN, GREEN];
-
         for b in benchline.get_bisectors() {
             // draw_mediatriz(b, sites, view, BLUE);
             // draw_line(b.a.x, b.a.y, b.b.x, b.b.y, 0.02, BLUE);
-
-            hyperbola_colors.swap(0, 1);
-            let hcolor = hyperbola_colors[0];
-
-            draw_hyperbola(view, b, sites, hcolor, sweepline);
+            draw_hyperbola(view, b, sites, sweepline);
         }
-
-        draw_line(view.left(), sweepline, view.right(), sweepline, 0.02, BLACK);
 
         for v in events.iter() {
             match v {
                 Event::Site(p) => {
                     let p = &sites[*p as usize];
-                    draw_circle(p.x, p.y, 0.03, BLACK);
+                    draw_circle(p.x, p.y, s.event_thickness, s.event_color);
                 }
                 Event::Intersection(p, _) => {
-                    draw_circle(p.x, p.y, 0.03, BLACK);
+                    draw_circle(p.x, p.y, s.event_thickness, s.event_color);
                 }
             }
         }
@@ -233,12 +274,14 @@ fn draw_parabola(
     let p = sites[p_idx as usize];
     let y_at = |x: f32| parabola_equation(p, sweepline, x);
 
+    let s = s();
+
     if p.y == sweepline {
         // println!("p.y == sweepline {} {}", p.x, y_at(p.x));
         let y = left_boundary
             .or(right_boundary)
             .map_or(f32::NEG_INFINITY, |b| b.y_at(sites, p.x));
-        draw_line(p.x, p.y, p.x, y, 0.03, BLACK);
+        draw_line(p.x, p.y, p.x, y, s.parabola_thickness, s.parabola_color);
         return;
     }
 
@@ -271,7 +314,7 @@ fn draw_parabola(
             continue;
         }
 
-        draw_line(x1, y1, x2, y2, 0.03, BLACK);
+        draw_line(x1, y1, x2, y2, s.parabola_thickness, s.parabola_color);
     }
 }
 
@@ -305,11 +348,25 @@ fn parabola_equation_at_x(p: Point, sweepline: f32, y: f32) -> (f32, f32) {
     }
 }
 
-fn draw_hyperbola(view: Rect, b: Bisector, sites: &[Point], hcolor: Color, sweepline: f32) {
+fn draw_hyperbola(view: Rect, b: Bisector, sites: &[Point], sweepline: f32) {
+    let s = s();
     let (q, r) = (sites[b.a as usize], sites[b.b as usize]);
     if q.y == r.y {
         let x = (q.x + r.x) / 2.0;
-        draw_line(x, q.y.max(sweepline), x, view.bottom(), 0.03, hcolor);
+        draw_line(
+            x,
+            q.y.max(sweepline),
+            x,
+            view.bottom(),
+            s.hyperbola_thickness,
+            s.hyperbola_color,
+        );
+        draw_circle(
+            x,
+            q.y.max(sweepline),
+            s.hyperbola_dot_thickness,
+            s.hyperbola_dot_color,
+        );
         return;
     }
 
@@ -345,16 +402,40 @@ fn draw_hyperbola(view: Rect, b: Bisector, sites: &[Point], hcolor: Color, sweep
             continue;
         }
 
-        if y1 < sweepline {
+        if y1 <= sweepline {
             let x = b.x_at_y_star(sites, sweepline);
-            draw_line(x, sweepline, x2, y2, 0.03, hcolor);
-            draw_circle(x, sweepline, 0.04, hcolor);
-        } else if y2 < sweepline {
+            draw_line(
+                x,
+                sweepline,
+                x2,
+                y2,
+                s.hyperbola_thickness,
+                s.hyperbola_color,
+            );
+            draw_circle(
+                x,
+                sweepline,
+                s.hyperbola_dot_thickness,
+                s.hyperbola_dot_color,
+            );
+        } else if y2 <= sweepline {
             let x = b.x_at_y_star(sites, sweepline);
-            draw_line(x, sweepline, x1, y1, 0.03, hcolor);
-            draw_circle(x, sweepline, 0.04, hcolor);
+            draw_line(
+                x,
+                sweepline,
+                x1,
+                y1,
+                s.hyperbola_thickness,
+                s.hyperbola_color,
+            );
+            draw_circle(
+                x,
+                sweepline,
+                s.hyperbola_dot_thickness,
+                s.hyperbola_dot_color,
+            );
         } else {
-            draw_line(x1, y1, x2, y2, 0.03, hcolor);
+            draw_line(x1, y1, x2, y2, s.hyperbola_thickness, s.hyperbola_color);
         }
     }
 }
@@ -549,11 +630,12 @@ fn draw_diagram_partial(
         let this = sites[this_idx as usize];
         points.sort_by(|a, b| voronoi_sweep::vec2_angle_cmp(*a - this, *b - this));
 
-        let color = CELL_COLORS[this_idx as usize % CELL_COLORS.len()];
+        let s = s();
+        let color = s.cell_colors[this_idx as usize % s.cell_colors.len()];
 
         // convert points, which delimits a convex polygon, to a Mesh
         draw_convex(&points, color);
-        draw_lines(&points, 0.02, BLACK);
+        draw_lines(&points, s.cell_border_thickness, s.cell_border_color);
     }
 }
 
