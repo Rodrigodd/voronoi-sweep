@@ -88,7 +88,7 @@ fn window_conf() -> Conf {
 }
 
 async fn main_() {
-    request_new_screen_size(600.0, 600.0);
+    request_new_screen_size(960.0, 720.0);
 
     let mut points = Vec::new();
 
@@ -153,24 +153,25 @@ async fn main_() {
 
     let mut step = 0;
 
-    let bottom_left = camera.screen_to_world(vec2(0.0, 0.0));
-    let top_right = camera.screen_to_world(vec2(screen_width(), screen_height()));
-    let view = Rect {
-        x: bottom_left.x,
-        y: top_right.y,
-        w: top_right.x - bottom_left.x,
-        h: bottom_left.y - top_right.y,
-    };
-
     // let mut cells = None;
 
     let mut sweepline = 0.0;
     let mut paused = false;
 
     let mut anim_state = AnimState::Running;
+    let mut zoom = 1.0;
 
     loop {
         let s = s();
+
+        let bottom_left = camera.screen_to_world(vec2(0.0, 0.0));
+        let top_right = camera.screen_to_world(vec2(screen_width(), screen_height()));
+        let view = Rect {
+            x: bottom_left.x,
+            y: top_right.y,
+            w: top_right.x - bottom_left.x,
+            h: bottom_left.y - top_right.y,
+        };
 
         if is_key_pressed(KeyCode::Q) {
             return;
@@ -181,9 +182,9 @@ async fn main_() {
 
         if mouse_wheel().1 != 0.0 {
             if mouse_wheel().1 > 0.0 {
-                camera.zoom *= 1.1;
+                zoom *= 1.1;
             } else {
-                camera.zoom /= 1.1;
+                zoom /= 1.1;
             }
         }
 
@@ -264,6 +265,9 @@ async fn main_() {
             }
         }
 
+        let screen_ratio = screen_width() / screen_height();
+        camera.zoom = zoom * vec2(1.5 / width / screen_ratio, -1.5 / height);
+
         clear_background(s.background_color);
 
         let (beachline, events, cells) = steps.get(step).unwrap_or_else(|| steps.last().unwrap());
@@ -320,6 +324,17 @@ fn draw_ui(anim_state: AnimState) {
         &format!("Transition time: {:.2?}", anim_state),
         10.0,
         30.0,
+        20.0,
+        BLACK,
+    );
+    draw_text(
+        &format!(
+            "Width: {:.2} Height: {:.2}",
+            screen_width(),
+            screen_height()
+        ),
+        10.0,
+        screen_height() - 60.0,
         20.0,
         BLACK,
     );
