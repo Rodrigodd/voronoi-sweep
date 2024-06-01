@@ -508,9 +508,11 @@ fn draw_hyperbola(view: Rect, mut b: Bisector, sites: &[Point], sweepline: f32) 
         b.max_x = q.x;
     }
 
-    let step = (view.right() - view.left()) / 100.0;
+    const STEPS: usize = 500;
 
-    for i in 0..100 {
+    let step = (view.right() - view.left()) / STEPS as f32;
+
+    for i in 0..STEPS {
         let mut x1 = view.left() + i as f32 * step;
         let mut x2 = view.left() + (i + 1) as f32 * step;
 
