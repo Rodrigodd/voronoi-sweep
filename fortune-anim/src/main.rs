@@ -52,7 +52,7 @@ fn s() -> Style {
         .collect(),
         cell_border_thickness: 0.02,
         cell_border_color: Color::from_hex(0x102010),
-        parabola_thickness: 0.02,
+        parabola_thickness: 0.025,
         parabola_color: Color::from_hex(0x001500),
         sweepline_thickness: 0.02,
         sweepline_color: Color::from_hex(0x000000),
@@ -99,9 +99,13 @@ async fn main_() {
             .as_secs(),
     );
 
-    while points.len() < 8 {
-        let x = rand::gen_range(-128, 127i16);
-        let y = rand::gen_range(-128, 80i16);
+    const TOTAL_POINTS: usize = 12;
+    const MAX_X: i32 = 255;
+    const MAX_Y: i32 = 208;
+
+    while points.len() < TOTAL_POINTS {
+        let x = rand::gen_range(0, MAX_X);
+        let y = rand::gen_range(0, MAX_Y);
         points.push((x, y));
         points.sort();
         points.dedup();
@@ -116,7 +120,7 @@ async fn main_() {
         .reduce(|(l, t, r, b), (x, y, _, _)| (l.min(x), t.min(y), r.max(x), b.max(y)))
         .unwrap();
 
-    let side = (bounds.2 - bounds.0).max(bounds.3 - bounds.1) as f32;
+    let side = (bounds.2 - bounds.0) as f32; // .max(bounds.3 - bounds.1) as f32;
     let offset_x = (side - (bounds.2 - bounds.0) as f32) / 2.0;
 
     let width = 3.0;
@@ -219,6 +223,11 @@ async fn main_() {
             AnimState::Running => {
                 if !paused {
                     sweepline += get_frame_time() * s.sweepline_speed;
+                    let over = sweepline - height * (MAX_Y as f32 / MAX_X as f32);
+                    if over > 0.0 {
+                        // accelarte the animation at the end
+                        sweepline += get_frame_time() * over;
+                    }
                 }
                 if steps[step]
                     .1
@@ -353,8 +362,6 @@ fn draw_animation(
     }
 
     for b in benchline.get_bisectors() {
-        // draw_mediatriz(b, sites, view, BLUE);
-        // draw_line(b.a.x, b.a.y, b.b.x, b.b.y, 0.02, BLUE);
         draw_hyperbola(view, b, sites, sweepline);
     }
 
@@ -370,18 +377,19 @@ fn draw_animation(
         }
     }
 
-    if let AnimState::TransitionPrelude { pos, .. } | AnimState::TransitionPostlude { pos, .. } =
-        anim_state
-    {
-        draw_poly_lines(
-            pos.x,
-            pos.y,
-            64,
-            s.event_circle_radius,
-            0.0,
-            s.event_circle_thickness,
-            s.event_circle_color,
-        );
+    match anim_state {
+        AnimState::TransitionPrelude { pos, .. } | AnimState::TransitionPostlude { pos, .. } => {
+            draw_poly_lines(
+                pos.x,
+                pos.y,
+                64,
+                s.event_circle_radius,
+                0.0,
+                s.event_circle_thickness,
+                s.event_circle_color,
+            );
+        }
+        _ => (),
     }
 }
 
@@ -470,7 +478,7 @@ fn parabola_equation_at_x(p: Point, sweepline: f32, y: f32) -> (f32, f32) {
     }
 }
 
-fn draw_hyperbola(view: Rect, b: Bisector, sites: &[Point], sweepline: f32) {
+fn draw_hyperbola(view: Rect, mut b: Bisector, sites: &[Point], sweepline: f32) {
     let s = s();
     let (q, r) = (sites[b.a as usize], sites[b.b as usize]);
     if q.y == r.y {
@@ -490,6 +498,14 @@ fn draw_hyperbola(view: Rect, b: Bisector, sites: &[Point], sweepline: f32) {
             s.hyperbola_dot_color,
         );
         return;
+    }
+
+    // avoid some problems when the lowest point of the hyperbola don't intersect the sweepline,
+    // and so it does not draw the tip circle.
+    if b.min_x.is_finite() {
+        b.min_x = q.x;
+    } else if b.max_x.is_finite() {
+        b.max_x = q.x;
     }
 
     let step = (view.right() - view.left()) / 100.0;
