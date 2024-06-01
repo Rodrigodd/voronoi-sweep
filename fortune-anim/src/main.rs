@@ -38,7 +38,7 @@ struct Style {
 fn s() -> Style {
     Style {
         prelude_delay: 0.2,
-        postlude_delay: 0.2,
+        postlude_delay: 0.1,
         sweepline_speed: 0.5,
         cell_colors: [
             0x249200, //
@@ -62,12 +62,12 @@ fn s() -> Style {
         hyperbola_dot_color: Color::from_hex(0x00a320),
         event_thickness: 0.04,
         event_color: Color::from_hex(0x000000),
-        event_circle_radius: 0.15,
+        event_circle_radius: 0.25,
         event_circle_thickness: 0.03,
         event_circle_color: Color::from_hex(0xd61928),
         site_thickness: 0.04,
         site_color: Color::from_hex(0xd61928),
-        background_color: Color::from_hex(0x79eadd),
+        background_color: Color::from_hex(0xb9eadd),
     }
 }
 
@@ -99,7 +99,7 @@ async fn main_() {
             .as_secs(),
     );
 
-    while points.len() < 15 {
+    while points.len() < 8 {
         let x = rand::gen_range(-128, 127i16);
         let y = rand::gen_range(-128, 80i16);
         points.push((x, y));
@@ -195,19 +195,31 @@ async fn main_() {
                 &mut sweepline,
                 sites,
             );
-            anim_state = AnimState::TransitionPrelude {
-                delay: s.prelude_delay,
-                pos: steps[step].1.first().unwrap().pos(sites),
-            };
+            anim_state = AnimState::Running;
         }
 
         if is_key_pressed(KeyCode::Right) {
-            sweepline = steps[step].1.first().unwrap().pos(sites).y;
+            match &mut anim_state {
+                AnimState::Running => {
+                    let this = steps[step].1.first();
+                    if let Some(val) = this {
+                        sweepline = val.pos(sites).y
+                    }
+                }
+                AnimState::TransitionPrelude { delay, .. } => {
+                    *delay = 0.0;
+                }
+                AnimState::TransitionPostlude { delay, .. } => {
+                    *delay = 0.0;
+                }
+            }
         }
 
         match &mut anim_state {
             AnimState::Running => {
-                sweepline += get_frame_time() * s.sweepline_speed;
+                if !paused {
+                    sweepline += get_frame_time() * s.sweepline_speed;
+                }
                 if steps[step]
                     .1
                     .first()
@@ -221,7 +233,9 @@ async fn main_() {
                 }
             }
             AnimState::TransitionPrelude { delay, pos } => {
-                *delay -= get_frame_time();
+                if !paused {
+                    *delay -= get_frame_time();
+                }
                 if *delay <= 0.0 {
                     set_state(&steps, step + 1, &mut step, &mut sweepline, sites);
                     anim_state = AnimState::TransitionPostlude {
@@ -231,7 +245,9 @@ async fn main_() {
                 }
             }
             AnimState::TransitionPostlude { delay, pos } => {
-                *delay -= get_frame_time();
+                if !paused {
+                    *delay -= get_frame_time();
+                }
                 if *delay <= 0.0 {
                     sweepline = pos.y;
                     anim_state = AnimState::Running;
@@ -357,10 +373,12 @@ fn draw_animation(
     if let AnimState::TransitionPrelude { pos, .. } | AnimState::TransitionPostlude { pos, .. } =
         anim_state
     {
-        draw_circle_lines(
+        draw_poly_lines(
             pos.x,
             pos.y,
+            64,
             s.event_circle_radius,
+            0.0,
             s.event_circle_thickness,
             s.event_circle_color,
         );
