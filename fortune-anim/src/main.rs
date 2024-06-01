@@ -26,6 +26,9 @@ struct Style {
     hyperbola_dot_color: Color,
     event_thickness: f32,
     event_color: Color,
+    event_circle_radius: f32,
+    event_circle_thickness: f32,
+    event_circle_color: Color,
     site_thickness: f32,
     site_color: Color,
     background_color: Color,
@@ -59,6 +62,9 @@ fn s() -> Style {
         hyperbola_dot_color: Color::from_hex(0x00a320),
         event_thickness: 0.04,
         event_color: Color::from_hex(0x000000),
+        event_circle_radius: 0.15,
+        event_circle_thickness: 0.03,
+        event_circle_color: Color::from_hex(0xd61928),
         site_thickness: 0.04,
         site_color: Color::from_hex(0xd61928),
         background_color: Color::from_hex(0x79eadd),
@@ -351,7 +357,13 @@ fn draw_animation(
     if let AnimState::TransitionPrelude { pos, .. } | AnimState::TransitionPostlude { pos, .. } =
         anim_state
     {
-        draw_circle_lines(pos.x, pos.y, 0.15, 0.03, RED);
+        draw_circle_lines(
+            pos.x,
+            pos.y,
+            s.event_circle_radius,
+            s.event_circle_thickness,
+            s.event_circle_color,
+        );
     }
 }
 
