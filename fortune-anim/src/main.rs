@@ -136,7 +136,7 @@ async fn main_() {
         })
         .collect::<Vec<_>>();
 
-    let (steps, diagram) = {
+    let (steps, _) = {
         let mut steps = Vec::new();
         let diagram = fortune_algorithm(sites, &mut |benchline, events, cells| {
             steps.push((benchline.clone(), events.to_vec(), cells.to_vec()));
@@ -580,7 +580,7 @@ fn draw_hyperbola(view: Rect, mut b: Bisector, sites: &[Point], sweepline: f32) 
     }
 }
 
-fn draw_diagram(view: Rect, cells: &[Cell], sites: &[Point]) {
+fn _draw_diagram(view: Rect, cells: &[Cell], sites: &[Point]) {
     let left = view.left();
     let right = view.right();
     for (c, cell) in cells.iter().enumerate() {

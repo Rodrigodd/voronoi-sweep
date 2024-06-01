@@ -1,1 +1,4 @@
-workspace = { members = ["fortune-anim", "voronoi-sweep"] }
+workspace = { resolver = "2", members = ["fortune-anim", "voronoi-sweep"] }
+
+[profile.bench]
+debug = true
