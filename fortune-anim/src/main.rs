@@ -208,58 +208,76 @@ async fn main_() {
             }
         }
 
-        set_default_camera();
-
         let s = s();
 
         clear_background(s.background_color);
 
-        let fps = get_fps();
-        draw_text(&format!("FPS: {:.2}", fps), 10.0, 10.0, 20.0, BLACK);
-
-        set_camera(&camera);
-
-        draw_diagram_partial(view, &cells, sites, &benchline, sweepline);
-
-        draw_line(
-            view.left(),
-            sweepline,
-            view.right(),
-            sweepline,
-            s.sweepline_thickness,
-            s.sweepline_color,
+        draw_animation(
+            &camera, view, &cells, sites, &benchline, sweepline, s, &events,
         );
-
-        for point in sites.iter() {
-            draw_circle(point.x, point.y, s.site_thickness, s.site_color);
-        }
-
-        for i in 0..benchline.len() {
-            let p_idx = benchline.get_region(i);
-            let left = benchline.get_left_boundary(i);
-            let right = benchline.get_right_boundary(i);
-            draw_parabola(view, sites, p_idx, sweepline, left, right);
-        }
-
-        for b in benchline.get_bisectors() {
-            // draw_mediatriz(b, sites, view, BLUE);
-            // draw_line(b.a.x, b.a.y, b.b.x, b.b.y, 0.02, BLUE);
-            draw_hyperbola(view, b, sites, sweepline);
-        }
-
-        for v in events.iter() {
-            match v {
-                Event::Site(p) => {
-                    let p = &sites[*p as usize];
-                    draw_circle(p.x, p.y, s.event_thickness, s.event_color);
-                }
-                Event::Intersection(p, _) => {
-                    draw_circle(p.x, p.y, s.event_thickness, s.event_color);
-                }
-            }
-        }
+        draw_ui();
 
         next_frame().await
+    }
+}
+
+fn draw_ui() {
+    set_default_camera();
+    let fps = get_fps();
+    draw_text(&format!("FPS: {:.2}", fps), 10.0, 10.0, 20.0, BLACK);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_animation(
+    camera: &Camera2D,
+    view: Rect,
+    cells: &[Cell],
+    sites: &[Point],
+    benchline: &Beachline,
+    sweepline: f32,
+    s: Style,
+    events: &[Event],
+) {
+    set_camera(camera);
+
+    draw_diagram_partial(view, cells, sites, benchline, sweepline);
+
+    draw_line(
+        view.left(),
+        sweepline,
+        view.right(),
+        sweepline,
+        s.sweepline_thickness,
+        s.sweepline_color,
+    );
+
+    for point in sites.iter() {
+        draw_circle(point.x, point.y, s.site_thickness, s.site_color);
+    }
+
+    for i in 0..benchline.len() {
+        let p_idx = benchline.get_region(i);
+        let left = benchline.get_left_boundary(i);
+        let right = benchline.get_right_boundary(i);
+        draw_parabola(view, sites, p_idx, sweepline, left, right);
+    }
+
+    for b in benchline.get_bisectors() {
+        // draw_mediatriz(b, sites, view, BLUE);
+        // draw_line(b.a.x, b.a.y, b.b.x, b.b.y, 0.02, BLUE);
+        draw_hyperbola(view, b, sites, sweepline);
+    }
+
+    for v in events.iter() {
+        match v {
+            Event::Site(p) => {
+                let p = &sites[*p as usize];
+                draw_circle(p.x, p.y, s.event_thickness, s.event_color);
+            }
+            Event::Intersection(p, _) => {
+                draw_circle(p.x, p.y, s.event_thickness, s.event_color);
+            }
+        }
     }
 }
 
