@@ -18,9 +18,10 @@ At time of writing, the algorithm is fully functional, but I still need to work
 on performance improvements (it still not $`O(n \log n)`$), refactor the code,
 and do more extensive testing.
 
-## Animation
+## Animation and Explanation
 
-You can see a really cool animation of the inner workings of the algorithm by running the following command:
+You can see a really cool animation of the inner workings of the algorithm by
+running the following command:
 
 ```sh
 cargo run --example fortune-anim
@@ -32,7 +33,8 @@ In the animation, black dots are site events or intersection events. The
 horizontal line is the sweepline, representing the beachline in $`*`$-mapping
 space, and the green hyperbolas are the $`*`$-mapped bisectors. Below the
 sweepline is the partially built Voronoi diagram, where the parabolas represent
-the non-$`*`$-mapped beachline.
+the non-$`*`$-mapped beachline. Each parabola is a section of the benchline,
+delimeted by the green dots.
 
 The algorithm processes events in order from bottom to top:
 - On site events, a new bisector is added to the beachline, adding events for
