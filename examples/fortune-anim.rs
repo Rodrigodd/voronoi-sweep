@@ -177,7 +177,7 @@ async fn main_() {
             return;
         }
         if is_key_pressed(KeyCode::R) {
-            reset(&mut step, &steps, &mut sweepline, sites);
+            reset(&mut step, &steps, &mut sweepline, sites, &mut anim_state);
         }
 
         if mouse_wheel().1 != 0.0 {
@@ -320,8 +320,10 @@ fn reset(
     steps: &[(Beachline, Vec<Event>, Vec<Cell>)],
     sweepline: &mut f32,
     sites: &[Point],
+    anim_state: &mut AnimState,
 ) {
     set_state(steps, 0, step, sweepline, sites);
+    *anim_state = AnimState::Running;
 }
 
 fn draw_ui(anim_state: AnimState) {
