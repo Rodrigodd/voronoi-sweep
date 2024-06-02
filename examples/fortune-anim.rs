@@ -237,7 +237,11 @@ async fn main_() {
                 {
                     sweepline = steps[step].1.first().unwrap().pos(sites).y;
                     anim_state = AnimState::TransitionPrelude {
-                        delay: s.prelude_delay,
+                        delay: if sweepline < height {
+                            s.prelude_delay
+                        } else {
+                            0.0
+                        },
                         pos: steps[step].1.first().unwrap().pos(sites),
                     };
                 }
@@ -249,7 +253,11 @@ async fn main_() {
                 if *delay <= 0.0 {
                     set_state(&steps, step + 1, &mut step, &mut sweepline, sites);
                     anim_state = AnimState::TransitionPostlude {
-                        delay: s.postlude_delay,
+                        delay: if sweepline < height {
+                            s.postlude_delay
+                        } else {
+                            0.0
+                        },
                         pos: *pos,
                     }
                 }
