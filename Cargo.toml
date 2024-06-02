@@ -1,4 +1,21 @@
-workspace = { resolver = "2", members = ["fortune-anim", "voronoi-sweep"] }
+[package]
+name = "voronoi-sweep"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bench]]
+name = "bench"
+harness = false
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1.4.0"
+rand = { version = "0.8.5", features = ["std", "small_rng"] }
+macroquad = "0.4.5"
+inline_tweak = { version = "1.1.1", features = ["derive"] }
 
 [profile.bench]
 debug = true
