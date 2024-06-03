@@ -9,6 +9,10 @@ edition = "2021"
 name = "bench"
 harness = false
 
+[[bench]]
+name = "complexity"
+harness = false
+
 [dependencies]
 
 [dev-dependencies]
