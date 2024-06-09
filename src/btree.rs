@@ -1,8 +1,6 @@
 use super::debugln;
 use std::{fmt::Debug, mem::MaybeUninit, ptr::NonNull};
 
-const ORDER: usize = 3;
-const CAPACITY: usize = ORDER - 1;
 
 macro_rules! test_assert {
     ($cond:expr) => {
@@ -28,17 +26,21 @@ impl<T> OptionTestExt for Option<T> {
     }
 }
 
-pub struct BTree<T> {
-    root: InternalNode<T>,
+/// A BTree, holding elements of type T, with a maximum of N elements per node and N+1 children per
+/// node.
+pub struct BTree<T, const N: usize> {
+    /// The root of the tree, is either a LeafNode or an InternalNode, if depth is 0 or not.
+    root: InternalNode<T, N>,
     /// The depth of the tree. A tree where the root is a leaf has depth 0.
     depth: usize,
 }
-impl<T: Ord + Debug> BTree<T> {
+impl<T: Ord + Debug, const N: usize> BTree<T, N> {
     pub fn new() -> Self {
         BTree {
             root: InternalNode {
                 inner: LeafNode::new(),
-                children: [None; ORDER],
+                child0: None,
+                childs: [None; N],
             },
             depth: 0,
         }
@@ -64,8 +66,10 @@ impl<T: Ord + Debug> BTree<T> {
             let left = std::mem::replace(&mut self.root, parent).inner;
 
             self.root.inner.values[0].write(median);
-            self.root.children[0] = NonNull::new(Box::into_raw(Box::new(left)).cast::<Node<T>>());
-            self.root.children[1] = NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T>>());
+            self.root.children_mut()[0] =
+                NonNull::new(Box::into_raw(Box::new(left)).cast::<Node<T, N>>());
+            self.root.children_mut()[1] =
+                NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T, N>>());
             self.root.inner.len = 1;
             self.depth += 1;
         } else {
@@ -86,25 +90,27 @@ impl<T: Ord + Debug> BTree<T> {
             let left = std::mem::replace(&mut self.root, parent);
 
             self.root.inner.values[0].write(median);
-            self.root.children[0] = NonNull::new(Box::into_raw(Box::new(left)).cast::<Node<T>>());
-            self.root.children[1] = NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T>>());
+            self.root.children_mut()[0] =
+                NonNull::new(Box::into_raw(Box::new(left)).cast::<Node<T, N>>());
+            self.root.children_mut()[1] =
+                NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T, N>>());
             self.root.inner.len = 1;
 
             self.depth += 1;
 
-            test_assert!(self.root.children[..self.root.inner.len]
+            test_assert!(self.root.children()[..self.root.inner.len]
                 .iter()
                 .all(|x| x.is_some()));
             test_assert!(self
                 .root
-                .children
+                .children()
                 .get(self.root.inner.len + 1)
                 .and_then(|c| c.as_ref())
                 .is_none());
         }
     }
 }
-impl<T: Clone> BTree<T> {
+impl<T: Clone, const N: usize> BTree<T, N> {
     fn values(&self) -> Vec<T> {
         if self.depth == 0 {
             self.root.inner.values().cloned().collect::<Vec<T>>()
@@ -113,21 +119,21 @@ impl<T: Clone> BTree<T> {
         }
     }
 }
-impl<T: Clone> InternalNode<T> {
+impl<T: Clone, const N: usize> InternalNode<T, N> {
     fn values(&self, depth: usize) -> Vec<T> {
         test_assert!(depth > 0);
         let mut values: Vec<T> = Vec::new();
-        for (child, value) in self.children[..self.inner.len + 1]
+        for (child, value) in self.children()[..self.inner.len + 1]
             .iter()
             .zip(self.inner.values().map(Some).chain(std::iter::once(None)))
         {
             let child = child.expect("child is None");
             if depth > 1 {
-                let child = unsafe { child.cast::<InternalNode<T>>().as_ref() };
+                let child = unsafe { child.cast::<InternalNode<T, N>>().as_ref() };
                 test_assert!(child.inner.internal, "child is internal");
                 values.extend(child.values(depth - 1));
             } else {
-                let child = unsafe { child.cast::<LeafNode<T>>().as_ref() };
+                let child = unsafe { child.cast::<LeafNode<T, N>>().as_ref() };
                 test_assert!(!child.internal, "child is leaf");
                 values.extend(child.values().cloned());
             }
@@ -140,23 +146,58 @@ impl<T: Clone> InternalNode<T> {
         values
     }
 }
+impl<T, const N: usize> InternalNode<T, N> {
+    /// Returns the children of this node as a contiguous slice of N+1 elements. This is a
+    /// ergonomic workaround the fact that we currently cannot represent a array of N+1 elements.
+    fn children(&self) -> &[Option<NonNull<Node<T, N>>>] {
+        // SAFETY: child0 and childs are layouted in memory as a contiguous array of N+1 elements.
+        unsafe {
+            test_assert!(
+                std::ptr::addr_of!(self.child0).add(1) == std::ptr::addr_of!(self.childs[0])
+            );
+            // Due to pointer provenance, we cannot get a pointer to a field, and expand to the
+            // entire array. Instead we pick a pointer to the struct, and shunk it to the array.
+            let struct_ptr = std::ptr::addr_of!(*self);
+            let offset = std::ptr::addr_of!(self.child0).byte_offset_from(struct_ptr);
+            let array_ptr = struct_ptr.byte_offset(offset) as *const Option<NonNull<Node<T, N>>>;
+            std::slice::from_raw_parts(array_ptr, N + 1)
+        }
+    }
+
+    /// Returns the children of this node as a contiguous mutable slice of N+1 elements. This is a
+    /// ergonomic workaround the fact that we currently cannot represent a array of N+1 elements.
+    fn children_mut(&mut self) -> &mut [Option<NonNull<Node<T, N>>>] {
+        // SAFETY: child0 and childs are layouted in memory as a contiguous array of N+1 elements.
+        unsafe {
+            test_assert!(
+                std::ptr::addr_of!(self.child0).add(1) == std::ptr::addr_of!(self.childs[0])
+            );
+            // Due to pointer provenance, we cannot get a pointer to a field, and expand to the
+            // entire array. Instead we pick a pointer to the struct, and shunk it to the array.
+            let struct_ptr = std::ptr::addr_of_mut!(*self);
+            let offset = std::ptr::addr_of!(self.child0).byte_offset_from(struct_ptr);
+            let array_ptr = struct_ptr.byte_offset(offset) as *mut Option<NonNull<Node<T, N>>>;
+            std::slice::from_raw_parts_mut(array_ptr, N + 1)
+        }
+    }
+}
 
 /// A node is either a Leaf or an InternalNode. But a pointer to a InternalNode<T> is a valid
 /// pointer to a LeafNode<T>.
 #[repr(transparent)]
 #[derive(Debug)]
-struct Node<T>(LeafNode<T>);
+struct Node<T, const N: usize>(LeafNode<T, N>);
 
-struct LeafNode<T: Sized> {
-    values: [MaybeUninit<T>; CAPACITY],
+struct LeafNode<T: Sized, const N: usize> {
+    values: [MaybeUninit<T>; N],
     len: usize,
     #[cfg(debug_assertions)]
     internal: bool,
 }
-impl<T: Ord + Debug> LeafNode<T> {
+impl<T: Ord + Debug, const N: usize> LeafNode<T, N> {
     fn new() -> Self {
         LeafNode {
-            values: [(); CAPACITY].map(|_| MaybeUninit::uninit()),
+            values: [(); N].map(|_| MaybeUninit::uninit()),
             len: 0,
             #[cfg(debug_assertions)]
             internal: false,
@@ -168,7 +209,7 @@ impl<T: Ord + Debug> LeafNode<T> {
     fn insert(&mut self, value: T) -> Option<(T, Self)> {
         test_assert!(!self.internal);
 
-        if self.len == CAPACITY {
+        if self.len == N {
             let (median, right) = self.split_at_median(value);
 
             debugln!("leaf splited {:?} {:?} {:?}", self, median, right);
@@ -197,14 +238,14 @@ impl<T: Ord + Debug> LeafNode<T> {
         None
     }
 
-    fn split_at_median(&mut self, value: T) -> (T, LeafNode<T>) {
-        test_assert!(self.len == CAPACITY);
+    fn split_at_median(&mut self, value: T) -> (T, LeafNode<T, N>) {
+        test_assert!(self.len == N);
 
-        let mut right = LeafNode::<T>::new();
+        let mut right = LeafNode::<T, N>::new();
         // let median;
 
         // check if we need to insert the value in the self or right node
-        let middle = CAPACITY / 2;
+        let middle = N / 2;
         // SAFETY: self is fully initialized
         if unsafe { value < *self.values[middle].assume_init_ref() } {
             // we need to insert the value in the self node
@@ -212,16 +253,16 @@ impl<T: Ord + Debug> LeafNode<T> {
             // move the right half of the keys to the right node
             //
             // SAFETY: all elements in self.values are initialized. The elements in
-            // middle..CAPACITY are being moved to right.values[0..CAPACITY - middle]. The length
+            // middle..N are being moved to right.values[0..CAPACITY - middle]. The length
             // of both nodes are updated, according to the number of elements moved.
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     self.values.as_ptr().add(middle),
                     right.values.as_mut_ptr(),
-                    CAPACITY - middle,
+                    N - middle,
                 );
                 self.len = middle;
-                right.len = CAPACITY - middle;
+                right.len = N - middle;
             }
 
             // insert the value in the self node
@@ -247,9 +288,9 @@ impl<T: Ord + Debug> LeafNode<T> {
                 std::ptr::copy_nonoverlapping(
                     self.values.as_ptr().add(middle + 1),
                     right.values.as_mut_ptr(),
-                    CAPACITY - (middle + 1),
+                    N - (middle + 1),
                 );
-                right.len = CAPACITY - middle - 1;
+                right.len = N - middle - 1;
             }
 
             // insert the value in the right node
@@ -259,7 +300,7 @@ impl<T: Ord + Debug> LeafNode<T> {
         }
     }
 }
-impl<T> LeafNode<T> {
+impl<T, const N: usize> LeafNode<T, N> {
     fn values(&self) -> impl Iterator<Item = &T> {
         // SAFETY: all indices smaller than self.len are initialized
         self.values[..self.len]
@@ -269,11 +310,17 @@ impl<T> LeafNode<T> {
 }
 
 #[repr(C)]
-struct InternalNode<T> {
-    inner: LeafNode<T>,
-    children: [Option<NonNull<Node<T>>>; ORDER],
+struct InternalNode<T, const N: usize> {
+    inner: LeafNode<T, N>,
+    /// The first child of this node.
+    ///
+    /// It could not be put in the array due to limitations to const
+    /// generics in Rust.
+    child0: Option<NonNull<Node<T, N>>>,
+    /// The last N children of this node, the first child is `child0`.
+    childs: [Option<NonNull<Node<T, N>>>; N],
 }
-impl<T: Ord + Debug> InternalNode<T> {
+impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
     fn new() -> Self {
         InternalNode {
             inner: LeafNode {
@@ -281,7 +328,8 @@ impl<T: Ord + Debug> InternalNode<T> {
                 internal: true,
                 ..LeafNode::new()
             },
-            children: [None; ORDER],
+            child0: None,
+            childs: [None; N],
         }
     }
 
@@ -297,20 +345,21 @@ impl<T: Ord + Debug> InternalNode<T> {
         };
 
         // insert the value in the child
-        let mut child = self.children[child_idx].expect("child is None");
+        let child = self.children()[child_idx].expect("child is None");
         let (median, right) = if depth == 1 {
             // our child is a leaf
-            let mut child = unsafe { child.cast::<LeafNode<T>>().as_mut() };
+            let child = unsafe { child.cast::<LeafNode<T, N>>().as_mut() };
             test_assert!(!child.internal, "child is leaf");
             let (median, right) = child.insert(value)?;
-            let right = NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T>>()).unwrap();
+            let right = NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T, N>>()).unwrap();
             (median, right)
         } else {
             // our child is an internal node
-            let child: &mut InternalNode<T> = unsafe { child.cast::<InternalNode<T>>().as_mut() };
+            let child: &mut InternalNode<T, N> =
+                unsafe { child.cast::<InternalNode<T, N>>().as_mut() };
             test_assert!(child.inner.internal, "child is internal");
             let (median, right) = child.find_and_insert(value, depth - 1)?;
-            let right = NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T>>()).unwrap();
+            let right = NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T, N>>()).unwrap();
             (median, right)
         };
 
@@ -353,10 +402,10 @@ impl<T: Ord + Debug> InternalNode<T> {
 
     /// Inserts a key into the node. If the node is full, the node is splited, in that case self
     /// becomes the left node and the median and the right node are returned.
-    fn insert(&mut self, value: T, child: NonNull<Node<T>>) -> Option<(T, Self)> {
+    fn insert(&mut self, value: T, child: NonNull<Node<T, N>>) -> Option<(T, Self)> {
         debugln!("inserting {:?} {:?}", value, unsafe { child.as_ref() });
 
-        if self.inner.len == CAPACITY {
+        if self.inner.len == N {
             let (median, rigth) = self.split_at_median(value, child);
             debugln!("internal splited {:?} {:?} {:?}", self, median, rigth);
 
@@ -377,41 +426,44 @@ impl<T: Ord + Debug> InternalNode<T> {
         }
 
         // move the child pointers
-        self.children.copy_within(i + 1..self.inner.len + 1, i + 2);
+        {
+            let len = self.inner.len;
+            self.children_mut().copy_within(i + 1..len + 1, i + 2);
+        }
 
         self.inner.values[i].write(value);
-        self.children[i + 1] = Some(child);
+        self.children_mut()[i + 1] = Some(child);
         self.inner.len += 1;
 
         test_assert!(
-            self.inner.len >= CAPACITY / 2,
+            self.inner.len >= N / 2,
             "invariant broken {:?} < {:?}",
             self.inner.len,
-            CAPACITY / 2
+            N / 2
         );
-        test_assert!(self.children[..self.inner.len + 1]
+        test_assert!(self.children()[..self.inner.len + 1]
             .iter()
             .all(|x| x.is_some()));
 
         None
     }
 
-    fn split_at_median(&mut self, value: T, child: NonNull<Node<T>>) -> (T, InternalNode<T>) {
-        test_assert!(self.inner.len == CAPACITY);
+    fn split_at_median(&mut self, value: T, child: NonNull<Node<T, N>>) -> (T, InternalNode<T, N>) {
+        test_assert!(self.inner.len == N);
 
-        let mut right = InternalNode::<T>::new();
+        let mut right = InternalNode::<T, N>::new();
         // let median;
 
         // check if we need to insert the value in the self or right node
-        let middle = CAPACITY / 2;
+        let middle = N / 2;
         // SAFETY: self is fully initialized
         let (median, right) = if unsafe { value < *self.inner.values[middle].assume_init_ref() } {
             // we need to insert the value in the self node
 
             // SAFETY: all elements in self.values are initialized. The elements in
-            // self.values[middle..CAPACITY] are being moved to right.values[0..CAPACITY - middle].
-            // The elements in self.children[middle+1..CAPACITY+1] are being moved to
-            // right.children[1..CAPACITY - middle + 1]. The length of both nodes are updated,
+            // self.values[middle..N] are being moved to right.values[0..CAPACITY - middle].
+            // The elements in self.children[middle+1..N+1] are being moved to
+            // right.children[1..N - middle + 1]. The length of both nodes are updated,
             // according to the number of elements moved.
             // After this, right.children[0] is still null.
             unsafe {
@@ -419,14 +471,17 @@ impl<T: Ord + Debug> InternalNode<T> {
                 std::ptr::copy_nonoverlapping(
                     self.inner.values.as_ptr().add(middle),
                     right.inner.values.as_mut_ptr(),
-                    CAPACITY - middle,
+                    N - middle,
                 );
-                right.inner.len = CAPACITY - middle;
+                right.inner.len = N - middle;
                 self.inner.len = middle;
 
                 // copy children pointers
-                right.children[1..right.inner.len + 1]
-                    .copy_from_slice(&self.children[middle + 1..]);
+                {
+                    let len = right.inner.len;
+                    right.children_mut()[1..len + 1]
+                        .copy_from_slice(&self.children()[middle + 1..]);
+                }
             }
 
             // insert the value in the self node
@@ -437,7 +492,7 @@ impl<T: Ord + Debug> InternalNode<T> {
             let median = unsafe {
                 self.inner.len = middle;
                 let median = self.inner.values[middle].assume_init_read();
-                right.children[0] = self.children[middle + 1];
+                right.children_mut()[0] = self.children()[middle + 1];
                 median
             };
 
@@ -456,13 +511,16 @@ impl<T: Ord + Debug> InternalNode<T> {
                 std::ptr::copy_nonoverlapping(
                     self.inner.values.as_ptr().add(middle + 1),
                     right.inner.values.as_mut_ptr(),
-                    CAPACITY - (middle + 1),
+                    N - (middle + 1),
                 );
-                right.inner.len = CAPACITY - middle - 1;
+                right.inner.len = N - middle - 1;
             }
 
             // copy children pointers
-            right.children[..right.inner.len + 1].copy_from_slice(&self.children[middle + 1..]);
+            {
+                let len = right.inner.len;
+                right.children_mut()[..len + 1].copy_from_slice(&self.children()[middle + 1..]);
+            }
 
             // insert the value in the right node
             let mut i = right.inner.len;
@@ -475,28 +533,28 @@ impl<T: Ord + Debug> InternalNode<T> {
                         right.inner.values[i].as_mut_ptr(),
                         1,
                     );
-                    right.children[i + 1] = right.children[i];
+                    right.children_mut()[i + 1] = right.children()[i];
                     i -= 1;
                 }
             }
             right.inner.values[i].write(value);
-            right.children[i + 1] = Some(child);
+            right.children_mut()[i + 1] = Some(child);
             right.inner.len += 1;
 
             (median, right)
         };
 
-        test_assert!(self.children[..self.inner.len + 1]
+        test_assert!(self.children()[..self.inner.len + 1]
             .iter()
             .all(|x| x.is_some()));
-        test_assert!(right.children[..right.inner.len + 1]
+        test_assert!(right.children()[..right.inner.len + 1]
             .iter()
             .all(|x| x.is_some()));
 
         (median, right)
     }
 }
-impl<T: Debug> Debug for BTree<T> {
+impl<T: Debug, const N: usize> Debug for BTree<T, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "BTree(")?;
         write!(f, "depth: {}, ", self.depth)?;
@@ -510,7 +568,7 @@ impl<T: Debug> Debug for BTree<T> {
     }
 }
 
-impl<T: Debug> Debug for InternalNode<T> {
+impl<T: Debug, const N: usize> Debug for InternalNode<T, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "~InternalNode(")?;
         self.inner.format(f)?;
@@ -519,7 +577,7 @@ impl<T: Debug> Debug for InternalNode<T> {
     }
 }
 
-impl<T: Debug> Debug for LeafNode<T> {
+impl<T: Debug, const N: usize> Debug for LeafNode<T, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "LeafNode[")?;
         for (i, value) in self.values().enumerate() {
@@ -532,21 +590,21 @@ impl<T: Debug> Debug for LeafNode<T> {
     }
 }
 
-impl<T: Debug> InternalNode<T> {
+impl<T: Debug, const N: usize> InternalNode<T, N> {
     fn format(&self, f: &mut std::fmt::Formatter<'_>, depth: usize) -> std::fmt::Result {
         test_assert!(depth > 0);
         write!(f, "[").unwrap();
-        for (child, value) in self.children[..self.inner.len + 1]
+        for (child, value) in self.children()[..self.inner.len + 1]
             .iter()
             .zip(self.inner.values().map(Some).chain(std::iter::once(None)))
         {
             let child = child.expect("child is None");
             if depth > 1 {
-                let child = unsafe { child.cast::<InternalNode<T>>().as_ref() };
+                let child = unsafe { child.cast::<InternalNode<T, N>>().as_ref() };
                 test_assert!(child.inner.internal, "child is internal");
                 child.format(f, depth - 1)?;
             } else {
-                let child = unsafe { child.cast::<LeafNode<T>>().as_ref() };
+                let child = unsafe { child.cast::<LeafNode<T, N>>().as_ref() };
                 test_assert!(!child.internal, "child is leaf");
                 child.format(f)?;
             }
@@ -560,7 +618,7 @@ impl<T: Debug> InternalNode<T> {
     }
 }
 
-impl<T: Debug> LeafNode<T> {
+impl<T: Debug, const N: usize> LeafNode<T, N> {
     fn format(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
         for (i, value) in self.values().enumerate() {
@@ -599,7 +657,7 @@ mod test {
 
     #[test]
     fn test_insert() {
-        let mut tree = BTree::<i32>::new();
+        let mut tree = BTree::<i32, 3>::new();
 
         tree.insert(30);
         debugln!("{:?}", tree);
@@ -661,7 +719,7 @@ mod test {
     fn check_sort(values: Vec<i32>) {
         let values = values.into_iter().map(|x| TestItem(x)).collect::<Vec<_>>();
 
-        let mut tree = BTree::<TestItem>::new();
+        let mut tree = BTree::<TestItem, 3>::new();
         debugln!("{:?}", tree);
         for value in &values {
             tree.insert(value.clone());
