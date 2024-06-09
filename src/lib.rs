@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 
+mod btree;
 mod heap;
+
 use heap::Heap;
 
 #[cfg(test)]
