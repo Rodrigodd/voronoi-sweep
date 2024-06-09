@@ -1,4 +1,5 @@
 use super::debugln;
+use std::cmp::Ordering;
 use std::{fmt::Debug, mem::MaybeUninit, ptr::NonNull};
 
 macro_rules! test_assert {
@@ -28,21 +29,24 @@ impl<T> OptionTestExt for Option<T> {
 }
 
 /// A BTree, holding elements of type T, with a maximum of N elements per node and N+1 children per
-/// node.
-pub struct BTree<T, const N: usize> {
+/// node, with a custom comparator F.
+pub struct BTree<T, F, const N: usize> {
     /// The root of the tree, is either a LeafNode or an InternalNode, if depth is 0 or not.
     root: InternalNode<T, N>,
     /// The depth of the tree. A tree where the root is a leaf has depth 0.
     depth: usize,
+    /// The comparator function.
+    cmp: F,
 }
-impl<T: Ord + Debug, const N: usize> BTree<T, N> {
-    pub fn new() -> Self {
+impl<T: Debug, F: Fn(&T, &T) -> Ordering, const N: usize> BTree<T, F, N> {
+    pub fn new(cmp: F) -> Self {
         BTree {
             root: InternalNode {
                 inner: LeafNode::new(),
                 child0: None,
                 childs: [None; N],
             },
+            cmp,
             depth: 0,
         }
     }
@@ -52,7 +56,7 @@ impl<T: Ord + Debug, const N: usize> BTree<T, N> {
         if self.depth == 0 {
             debugln!("adding to leaf root");
             test_assert!(!self.root.inner.internal);
-            let Some((median, right)) = self.root.inner.insert(value) else {
+            let Some((median, right)) = self.root.inner.insert(value, &self.cmp) else {
                 return;
             };
 
@@ -76,7 +80,8 @@ impl<T: Ord + Debug, const N: usize> BTree<T, N> {
         } else {
             debugln!("adding to internal root");
             // find child that cotains the value
-            let Some((median, right)) = self.root.find_and_insert(value, self.depth) else {
+            let Some((median, right)) = self.root.find_and_insert(value, &self.cmp, self.depth)
+            else {
                 return;
             };
 
@@ -111,7 +116,7 @@ impl<T: Ord + Debug, const N: usize> BTree<T, N> {
         }
     }
 }
-impl<T: Clone, const N: usize> BTree<T, N> {
+impl<T: Clone, F, const N: usize> BTree<T, F, N> {
     fn values(&self) -> Vec<T> {
         if self.depth == 0 {
             self.root.inner.values().cloned().collect::<Vec<T>>()
@@ -195,7 +200,7 @@ struct LeafNode<T: Sized, const N: usize> {
     #[cfg(debug_assertions)]
     internal: bool,
 }
-impl<T: Ord + Debug, const N: usize> LeafNode<T, N> {
+impl<T: Debug, const N: usize> LeafNode<T, N> {
     fn new() -> Self {
         LeafNode {
             values: [(); N].map(|_| MaybeUninit::uninit()),
@@ -207,11 +212,11 @@ impl<T: Ord + Debug, const N: usize> LeafNode<T, N> {
 
     /// Inserts a key into the node. If the node is full, the node is splited, in that case self
     /// becomes the left node and the median and the right node are returned.
-    fn insert(&mut self, value: T) -> Option<(T, Self)> {
+    fn insert<F: Fn(&T, &T) -> Ordering>(&mut self, value: T, cmp: &F) -> Option<(T, Self)> {
         test_assert!(!self.internal);
 
         if self.len == N {
-            let (median, right) = self.split_at_median(value);
+            let (median, right) = self.split_at_median(value, cmp);
 
             debugln!("leaf splited {:?} {:?} {:?}", self, median, right);
 
@@ -224,7 +229,7 @@ impl<T: Ord + Debug, const N: usize> LeafNode<T, N> {
         // SAFETY: All elements with index < self.len are initialized. This invariant is valid at
         // initialization, with self.len = 0, and is maintained by this method.
         unsafe {
-            while i > 0 && *self.values[i - 1].assume_init_ref() > value {
+            while i > 0 && cmp(self.values[i - 1].assume_init_ref(), &value).is_gt() {
                 std::ptr::copy_nonoverlapping(
                     self.values[i - 1].as_ptr(),
                     self.values[i].as_mut_ptr(),
@@ -239,7 +244,11 @@ impl<T: Ord + Debug, const N: usize> LeafNode<T, N> {
         None
     }
 
-    fn split_at_median(&mut self, value: T) -> (T, LeafNode<T, N>) {
+    fn split_at_median<F: Fn(&T, &T) -> Ordering>(
+        &mut self,
+        value: T,
+        cmp: &F,
+    ) -> (T, LeafNode<T, N>) {
         test_assert!(self.len == N);
 
         let mut right = LeafNode::<T, N>::new();
@@ -248,7 +257,7 @@ impl<T: Ord + Debug, const N: usize> LeafNode<T, N> {
         // check if we need to insert the value in the self or right node
         let middle = N / 2;
         // SAFETY: self is fully initialized
-        if unsafe { value < *self.values[middle].assume_init_ref() } {
+        if cmp(&value, unsafe { self.values[middle].assume_init_ref() }).is_lt() {
             // we need to insert the value in the self node
 
             // move the right half of the keys to the right node
@@ -267,7 +276,7 @@ impl<T: Ord + Debug, const N: usize> LeafNode<T, N> {
             }
 
             // insert the value in the self node
-            self.insert(value).test_assert_none();
+            self.insert(value, cmp).test_assert_none();
 
             // SAFETY: after the insertion above, middle is initialized. We pop it out of
             // self, updating the length of self accordingly.
@@ -295,7 +304,7 @@ impl<T: Ord + Debug, const N: usize> LeafNode<T, N> {
             }
 
             // insert the value in the right node
-            right.insert(value).test_assert_none();
+            right.insert(value, cmp).test_assert_none();
 
             (median, right)
         }
@@ -321,7 +330,7 @@ struct InternalNode<T, const N: usize> {
     /// The last N children of this node, the first child is `child0`.
     childs: [Option<NonNull<Node<T, N>>>; N],
 }
-impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
+impl<T: Debug, const N: usize> InternalNode<T, N> {
     fn new() -> Self {
         InternalNode {
             inner: LeafNode {
@@ -334,11 +343,16 @@ impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
         }
     }
 
-    fn find_and_insert(&mut self, value: T, depth: usize) -> Option<(T, Self)> {
+    fn find_and_insert<F: Fn(&T, &T) -> Ordering>(
+        &mut self,
+        value: T,
+        cmp: &F,
+        depth: usize,
+    ) -> Option<(T, Self)> {
         // find which child to insert the value
         let child_idx = 'find_child: {
             for (i, item) in self.inner.values().enumerate() {
-                if value < *item {
+                if cmp(&value, item).is_lt() {
                     break 'find_child i;
                 }
             }
@@ -351,7 +365,7 @@ impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
             // our child is a leaf
             let child = unsafe { child.cast::<LeafNode<T, N>>().as_mut() };
             test_assert!(!child.internal, "child is leaf");
-            let (median, right) = child.insert(value)?;
+            let (median, right) = child.insert(value, cmp)?;
             let right = NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T, N>>()).unwrap();
             (median, right)
         } else {
@@ -359,7 +373,7 @@ impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
             let child: &mut InternalNode<T, N> =
                 unsafe { child.cast::<InternalNode<T, N>>().as_mut() };
             test_assert!(child.inner.internal, "child is internal");
-            let (median, right) = child.find_and_insert(value, depth - 1)?;
+            let (median, right) = child.find_and_insert(value, cmp, depth - 1)?;
             let right = NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T, N>>()).unwrap();
             (median, right)
         };
@@ -373,7 +387,7 @@ impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
 
         // self.insert(median, right)
 
-        let Some((median, right)) = self.insert(median, right) else {
+        let Some((median, right)) = self.insert(median, right, cmp) else {
             return None;
         };
 
@@ -402,11 +416,16 @@ impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
 
     /// Inserts a key into the node. If the node is full, the node is splited, in that case self
     /// becomes the left node and the median and the right node are returned.
-    fn insert(&mut self, value: T, child: NonNull<Node<T, N>>) -> Option<(T, Self)> {
+    fn insert<F: Fn(&T, &T) -> Ordering>(
+        &mut self,
+        value: T,
+        child: NonNull<Node<T, N>>,
+        cmp: &F,
+    ) -> Option<(T, Self)> {
         debugln!("inserting {:?} {:?}", value, unsafe { child.as_ref() });
 
         if self.inner.len == N {
-            let (median, rigth) = self.split_at_median(value, child);
+            let (median, rigth) = self.split_at_median(value, child, cmp);
             debugln!("internal splited {:?} {:?} {:?}", self, median, rigth);
 
             return Some((median, rigth));
@@ -415,7 +434,7 @@ impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
         // SAFETY: All elements with index < self.len are initialized. This invariant is valid at
         // initialization, with self.len = 0, and is maintained by this method.
         unsafe {
-            while i > 0 && *self.inner.values[i - 1].assume_init_ref() > value {
+            while i > 0 && cmp(self.inner.values[i - 1].assume_init_ref(), &value).is_gt() {
                 std::ptr::copy_nonoverlapping(
                     self.inner.values[i - 1].as_ptr(),
                     self.inner.values[i].as_mut_ptr(),
@@ -448,7 +467,12 @@ impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
         None
     }
 
-    fn split_at_median(&mut self, value: T, child: NonNull<Node<T, N>>) -> (T, InternalNode<T, N>) {
+    fn split_at_median<F: Fn(&T, &T) -> Ordering>(
+        &mut self,
+        value: T,
+        child: NonNull<Node<T, N>>,
+        cmp: &F,
+    ) -> (T, InternalNode<T, N>) {
         test_assert!(self.inner.len == N);
 
         let mut right = InternalNode::<T, N>::new();
@@ -457,7 +481,9 @@ impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
         // check if we need to insert the value in the self or right node
         let middle = N / 2;
         // SAFETY: self is fully initialized
-        let (median, right) = if unsafe { value < *self.inner.values[middle].assume_init_ref() } {
+        let (median, right) = if unsafe {
+            cmp(&value, self.inner.values[middle].assume_init_ref()).is_lt()
+        } {
             // we need to insert the value in the self node
 
             // SAFETY: all elements in self.values are initialized. The elements in
@@ -485,7 +511,7 @@ impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
             }
 
             // insert the value in the self node
-            self.insert(value, child).test_assert_none();
+            self.insert(value, child, cmp).test_assert_none();
 
             // SAFETY: pop the median out of self, updating the length of self accordingly, and
             // moving the popped child pointer to right.children[0].
@@ -527,7 +553,7 @@ impl<T: Ord + Debug, const N: usize> InternalNode<T, N> {
             // SAFETY: All elements with index < self.len are initialized. This invariant is valid at
             // initialization, with self.len = 0, and is maintained by this method.
             unsafe {
-                while i > 0 && *right.inner.values[i - 1].assume_init_ref() > value {
+                while i > 0 && cmp(right.inner.values[i - 1].assume_init_ref(), &value).is_gt() {
                     std::ptr::copy_nonoverlapping(
                         right.inner.values[i - 1].as_ptr(),
                         right.inner.values[i].as_mut_ptr(),
@@ -581,7 +607,7 @@ mod test {
 
     #[test]
     fn test_insert() {
-        let mut tree = BTree::<i32, 3>::new();
+        let mut tree = BTree::<i32, _, 3>::new(i32::cmp);
 
         tree.insert(30);
         debugln!("{:?}", tree);
@@ -643,7 +669,7 @@ mod test {
     fn check_sort(values: Vec<i32>) {
         let values = values.into_iter().map(|x| TestItem(x)).collect::<Vec<_>>();
 
-        let mut tree = BTree::<TestItem, 3>::new();
+        let mut tree = BTree::<TestItem, _, 3>::new(TestItem::cmp);
         debugln!("{:?}", tree);
         for value in &values {
             tree.insert(value.clone());

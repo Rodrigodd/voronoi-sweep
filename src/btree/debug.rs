@@ -1,7 +1,7 @@
 use super::{BTree, InternalNode, LeafNode};
 use std::fmt::Debug;
 
-impl<T: Debug, const N: usize> Debug for BTree<T, N> {
+impl<T: Debug, F, const N: usize> Debug for BTree<T, F, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "BTree(")?;
         write!(f, "depth: {}, ", self.depth)?;
