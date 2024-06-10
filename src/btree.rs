@@ -225,7 +225,7 @@ impl<T: Debug, const N: usize> LeafNode<T, N> {
         // SAFETY: All elements with index < self.len are initialized. This invariant is valid at
         // initialization, with self.len = 0, and is maintained by this method.
         unsafe {
-            while i > 0 && cmp(self.values[i - 1].assume_init_ref(), &value).is_gt() {
+            while i > 0 && cmp(&value, self.values[i - 1].assume_init_ref()).is_lt() {
                 std::ptr::copy_nonoverlapping(
                     self.values[i - 1].as_ptr(),
                     self.values[i].as_mut_ptr(),
@@ -430,7 +430,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
         // SAFETY: All elements with index < self.len are initialized. This invariant is valid at
         // initialization, with self.len = 0, and is maintained by this method.
         unsafe {
-            while i > 0 && cmp(self.inner.values[i - 1].assume_init_ref(), &value).is_gt() {
+            while i > 0 && cmp(&value, self.inner.values[i - 1].assume_init_ref()).is_lt() {
                 std::ptr::copy_nonoverlapping(
                     self.inner.values[i - 1].as_ptr(),
                     self.inner.values[i].as_mut_ptr(),
@@ -549,7 +549,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
             // SAFETY: All elements with index < self.len are initialized. This invariant is valid at
             // initialization, with self.len = 0, and is maintained by this method.
             unsafe {
-                while i > 0 && cmp(right.inner.values[i - 1].assume_init_ref(), &value).is_gt() {
+                while i > 0 && cmp(&value, right.inner.values[i - 1].assume_init_ref()).is_lt() {
                     std::ptr::copy_nonoverlapping(
                         right.inner.values[i - 1].as_ptr(),
                         right.inner.values[i].as_mut_ptr(),
