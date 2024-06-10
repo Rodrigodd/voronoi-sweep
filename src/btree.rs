@@ -30,33 +30,30 @@ impl<T> OptionTestExt for Option<T> {
 
 /// A BTree, holding elements of type T, with a maximum of N elements per node and N+1 children per
 /// node, with a custom comparator F.
-pub struct BTree<T, F, const N: usize> {
+pub struct BTree<T, const N: usize> {
     /// The root of the tree, is either a LeafNode or an InternalNode, if depth is 0 or not.
     root: InternalNode<T, N>,
     /// The depth of the tree. A tree where the root is a leaf has depth 0.
     depth: usize,
-    /// The comparator function.
-    cmp: F,
 }
-impl<T: Debug, F: Fn(&T, &T) -> Ordering, const N: usize> BTree<T, F, N> {
-    pub fn new(cmp: F) -> Self {
+impl<T: Debug, const N: usize> BTree<T, N> {
+    pub fn new() -> Self {
         BTree {
             root: InternalNode {
                 inner: LeafNode::new(),
                 child0: None,
                 childs: [None; N],
             },
-            cmp,
             depth: 0,
         }
     }
 
-    pub fn insert(&mut self, value: T) {
+    pub fn insert<F: Fn(&T, &T) -> Ordering>(&mut self, value: T, cmp: F) {
         debugln!("adding {:?}", value);
         if self.depth == 0 {
             debugln!("adding to leaf root");
             test_assert!(!self.root.inner.internal);
-            let Some((median, right)) = self.root.inner.insert(value, &self.cmp) else {
+            let Some((median, right)) = self.root.inner.insert(value, &cmp) else {
                 return;
             };
 
@@ -80,8 +77,7 @@ impl<T: Debug, F: Fn(&T, &T) -> Ordering, const N: usize> BTree<T, F, N> {
         } else {
             debugln!("adding to internal root");
             // find child that cotains the value
-            let Some((median, right)) = self.root.find_and_insert(value, &self.cmp, self.depth)
-            else {
+            let Some((median, right)) = self.root.find_and_insert(value, &cmp, self.depth) else {
                 return;
             };
 
@@ -116,7 +112,7 @@ impl<T: Debug, F: Fn(&T, &T) -> Ordering, const N: usize> BTree<T, F, N> {
         }
     }
 }
-impl<T: Clone, F, const N: usize> BTree<T, F, N> {
+impl<T: Clone, const N: usize> BTree<T, N> {
     fn values(&self) -> Vec<T> {
         if self.depth == 0 {
             self.root.inner.values().cloned().collect::<Vec<T>>()
@@ -607,21 +603,22 @@ mod test {
 
     #[test]
     fn test_insert() {
-        let mut tree = BTree::<i32, _, 3>::new(i32::cmp);
+        let mut tree = BTree::<i32, 3>::new();
+        let cmp = i32::cmp;
 
-        tree.insert(30);
+        tree.insert(30, cmp);
         debugln!("{:?}", tree);
-        tree.insert(10);
+        tree.insert(10, cmp);
         debugln!("{:?}", tree);
-        tree.insert(20);
+        tree.insert(20, cmp);
         debugln!("{:?}", tree);
-        tree.insert(60);
+        tree.insert(60, cmp);
         debugln!("{:?}", tree);
-        tree.insert(40);
+        tree.insert(40, cmp);
         debugln!("{:?}", tree);
-        tree.insert(50);
+        tree.insert(50, cmp);
         debugln!("{:?}", tree);
-        tree.insert(30);
+        tree.insert(30, cmp);
         debugln!("{:?}", tree);
 
         debugln!("{:?}", tree.values());
@@ -669,10 +666,12 @@ mod test {
     fn check_sort(values: Vec<i32>) {
         let values = values.into_iter().map(|x| TestItem(x)).collect::<Vec<_>>();
 
-        let mut tree = BTree::<TestItem, _, 3>::new(TestItem::cmp);
+        let mut tree = BTree::<TestItem, 3>::new();
+        let cmp = TestItem::cmp;
+
         debugln!("{:?}", tree);
         for value in &values {
-            tree.insert(value.clone());
+            tree.insert(value.clone(), cmp);
             debugln!("{:?}", tree);
         }
 
