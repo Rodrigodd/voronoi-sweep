@@ -1,11 +1,31 @@
 use super::*;
 use proptest::prelude::*;
+use std::sync::atomic::{AtomicIsize, Ordering};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-struct TestItem(i32);
+thread_local! {
+    static ALLOC_COUNT: AtomicIsize = const { AtomicIsize::new(0) };
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct TestItem {
+    value: i32,
+}
+impl TestItem {
+    fn new(x: i32) -> Self {
+        ALLOC_COUNT.with(|x| x.fetch_add(1, Ordering::Relaxed));
+        debugln!("allocating {:?}", x);
+        Self { value: x }
+    }
+}
+impl Clone for TestItem {
+    fn clone(&self) -> Self {
+        Self::new(self.value)
+    }
+}
 impl Drop for TestItem {
     fn drop(&mut self) {
-        debugln!("dropping {:?}", self.0);
+        ALLOC_COUNT.with(|x| x.fetch_sub(1, Ordering::Relaxed));
+        debugln!("dropping {:?}", self.value);
         // flush stdout
         // use std::io::Write;
         // let mut stdout = std::io::stdout().lock();
@@ -16,7 +36,16 @@ impl Drop for TestItem {
 }
 impl std::fmt::Debug for TestItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        self.value.fmt(f)
+    }
+}
+
+struct CheckAllocsOnDrop;
+impl Drop for CheckAllocsOnDrop {
+    fn drop(&mut self) {
+        ALLOC_COUNT.with(|x| {
+            assert_eq!(x.load(Ordering::Relaxed), 0);
+        });
     }
 }
 
@@ -83,7 +112,10 @@ fn case4() {
 }
 
 fn check_sort(values: Vec<i32>) {
-    let values = values.into_iter().map(|x| TestItem(x)).collect::<Vec<_>>();
+    let values = values
+        .into_iter()
+        .map(|x| TestItem::new(x))
+        .collect::<Vec<_>>();
 
     let mut tree = BTree::<TestItem, 3>::new();
     let cmp = TestItem::cmp;
@@ -379,9 +411,10 @@ fn removal_case10() {
 }
 
 fn check_removal(values: Vec<(i32, bool)>) {
+    let _ondrop = CheckAllocsOnDrop;
     let values = values
         .into_iter()
-        .map(|(x, b)| (TestItem(x), b))
+        .map(|(x, b)| (TestItem::new(x), b))
         .collect::<Vec<_>>();
 
     let mut tree = BTree::<TestItem, 3>::new();
@@ -451,10 +484,117 @@ fn removal4_case1() {
     ])
 }
 
+#[test]
+fn removal4_case2() {
+    check_removal4(vec![
+        (41, false),
+        (35, false),
+        (41, true),
+        (16, true),
+        (3, true),
+        (39, false),
+        (17, true),
+        (19, false),
+        (2, true),
+        (21, false),
+        (7, true),
+        (3, false),
+        (29, false),
+        (16, false),
+        (46, false),
+        (39, true),
+        (25, false),
+        (48, false),
+        (14, true),
+        (49, false),
+        (32, true),
+        (42, true),
+        (15, false),
+        (13, false),
+        (28, true),
+        (7, false),
+        (31, true),
+        (0, true),
+        (47, true),
+        (26, true),
+        (29, true),
+        (37, true),
+        (6, false),
+        (47, false),
+        (35, true),
+        (10, false),
+        (33, false),
+        (36, false),
+        (24, true),
+        (20, false),
+        (31, false),
+        (0, false),
+        (46, true),
+        (10, true),
+        (1, false),
+        (44, false),
+        (13, true),
+        (23, true),
+        (17, false),
+        (14, false),
+        (45, false),
+        (22, true),
+        (27, true),
+        (15, true),
+        (25, true),
+        (45, true),
+        (26, false),
+        (9, true),
+        (30, true),
+        (44, true),
+        (27, false),
+        (9, false),
+        (18, false),
+        (5, true),
+        (30, false),
+        (4, true),
+        (8, true),
+        (40, true),
+        (32, false),
+        (36, true),
+        (37, false),
+        (11, true),
+        (23, false),
+        (43, false),
+        (6, true),
+        (22, false),
+        (49, true),
+        (33, true),
+        (1, true),
+        (42, false),
+        (48, true),
+        (12, true),
+        (2, false),
+        (40, false),
+        (21, true),
+        (8, false),
+        (5, false),
+        (38, true),
+        (38, false),
+        (11, false),
+        (4, false),
+        (43, true),
+        (19, true),
+        (24, false),
+        (12, false),
+        (28, false),
+        (18, true),
+        (34, true),
+        (20, true),
+        (34, false),
+    ])
+}
+
 fn check_removal4(values: Vec<(i32, bool)>) {
+    let _ondrop = CheckAllocsOnDrop;
     let values = values
         .into_iter()
-        .map(|(x, b)| (TestItem(x), b))
+        .map(|(x, b)| (TestItem::new(x), b))
         .collect::<Vec<_>>();
 
     let mut tree = BTree::<TestItem, 4>::new();
@@ -483,4 +623,3 @@ fn check_removal4(values: Vec<(i32, bool)>) {
 
     assert_eq!(values, tree_values);
 }
-

@@ -34,10 +34,10 @@ impl<T> OptionTestExt for Option<T> {
 /// A BTree, holding elements of type T, with a maximum of N elements per node and N+1 children per
 /// node, with a custom comparator F.
 pub struct BTree<T, const N: usize> {
-    /// The root of the tree, is either a LeafNode or an InternalNode, if depth is 0 or not.
+    /// The root of the tree, is either a LeafNode or an InternalNode, if height is 0 or not.
     root: InternalNode<T, N>,
-    /// The depth of the tree. A tree where the root is a leaf has depth 0.
-    depth: usize,
+    /// The height of the tree. A tree where the root is a leaf has height 0.
+    height: usize,
 }
 impl<T: Debug, const N: usize> BTree<T, N> {
     pub fn new() -> Self {
@@ -47,13 +47,13 @@ impl<T: Debug, const N: usize> BTree<T, N> {
                 child0: None,
                 childs: [None; N],
             },
-            depth: 0,
+            height: 0,
         }
     }
 
     pub fn insert<F: Fn(&T, &T) -> Ordering>(&mut self, value: T, cmp: F) {
         debugln!("adding {:?}", value);
-        if self.depth == 0 {
+        if self.height == 0 {
             debugln!("adding to leaf root");
             test_assert!(!self.root.inner.internal);
             let Some((median, right)) = self.root.inner.insert(value, &cmp) else {
@@ -76,11 +76,11 @@ impl<T: Debug, const N: usize> BTree<T, N> {
             self.root.children_mut()[1] =
                 NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T, N>>());
             self.root.inner.len = 1;
-            self.depth += 1;
+            self.height += 1;
         } else {
             debugln!("adding to internal root");
             // find child that cotains the value
-            let Some((median, right)) = self.root.find_and_insert(value, &cmp, self.depth) else {
+            let Some((median, right)) = self.root.find_and_insert(value, &cmp, self.height) else {
                 return;
             };
 
@@ -101,7 +101,7 @@ impl<T: Debug, const N: usize> BTree<T, N> {
                 NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T, N>>());
             self.root.inner.len = 1;
 
-            self.depth += 1;
+            self.height += 1;
 
             test_assert!(self.root.children()[..self.root.inner.len]
                 .iter()
@@ -116,25 +116,25 @@ impl<T: Debug, const N: usize> BTree<T, N> {
     }
 
     pub fn remove<K: Debug, F: Fn(&K, &T) -> Ordering>(&mut self, value: K, cmp: F) -> Option<T> {
-        if self.depth == 0 {
+        if self.height == 0 {
             debugln!("removing {:?} from leaf root", value);
             self.root.inner.remove(value, cmp)
         } else {
             debugln!("removing {:?} from internal root", value);
-            let v = self.root.remove(value, cmp, self.depth);
+            let v = self.root.remove(value, cmp, self.height);
 
             // if the root has only one child, we can replace the root with a LeafNode.
             if self.root.inner.len == 0 {
                 debugln!("root has only one child");
                 let child = self.root.children_mut()[0].unwrap();
-                if self.depth > 1 {
+                if self.height > 1 {
                     self.root =
                         *unsafe { Box::from_raw(child.as_ptr().cast::<InternalNode<T, N>>()) };
                 } else {
                     self.root.inner =
                         *unsafe { Box::from_raw(child.as_ptr().cast::<LeafNode<T, N>>()) };
                 }
-                self.depth -= 1;
+                self.height -= 1;
                 debugln!("new root {:?}", self);
             }
 
@@ -144,16 +144,16 @@ impl<T: Debug, const N: usize> BTree<T, N> {
 }
 impl<T: Clone, const N: usize> BTree<T, N> {
     fn values(&self) -> Vec<T> {
-        if self.depth == 0 {
+        if self.height == 0 {
             self.root.inner.values().cloned().collect::<Vec<T>>()
         } else {
-            self.root.values(self.depth)
+            self.root.values(self.height)
         }
     }
 }
 impl<T: Clone, const N: usize> InternalNode<T, N> {
-    fn values(&self, depth: usize) -> Vec<T> {
-        test_assert!(depth > 0);
+    fn values(&self, height: usize) -> Vec<T> {
+        test_assert!(height > 0);
         test_assert!(self.inner.internal, "node is internal");
         let mut values: Vec<T> = Vec::new();
         for (child, value) in self.children()[..self.inner.len + 1]
@@ -161,10 +161,10 @@ impl<T: Clone, const N: usize> InternalNode<T, N> {
             .zip(self.inner.values().map(Some).chain(std::iter::once(None)))
         {
             let child = child.expect("child is None");
-            if depth > 1 {
+            if height > 1 {
                 let child = unsafe { child.cast::<InternalNode<T, N>>().as_ref() };
                 test_assert!(child.inner.internal, "child is internal");
-                values.extend(child.values(depth - 1));
+                values.extend(child.values(height - 1));
             } else {
                 let child = unsafe { child.cast::<LeafNode<T, N>>().as_ref() };
                 test_assert!(!child.internal, "child is leaf");
@@ -428,7 +428,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
         &mut self,
         value: T,
         cmp: &F,
-        depth: usize,
+        height: usize,
     ) -> Option<(T, Self)> {
         // find which child to insert the value
         let child_idx = 'find_child: {
@@ -442,7 +442,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
 
         // insert the value in the child
         let child = self.children()[child_idx].expect("child is None");
-        let (median, right) = if depth == 1 {
+        let (median, right) = if height == 1 {
             // our child is a leaf
             let child = unsafe { child.cast::<LeafNode<T, N>>().as_mut() };
             test_assert!(!child.internal, "child is leaf");
@@ -454,7 +454,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
             let child: &mut InternalNode<T, N> =
                 unsafe { child.cast::<InternalNode<T, N>>().as_mut() };
             test_assert!(child.inner.internal, "child is internal");
-            let (median, right) = child.find_and_insert(value, cmp, depth - 1)?;
+            let (median, right) = child.find_and_insert(value, cmp, height - 1)?;
             let right = NonNull::new(Box::into_raw(Box::new(right)).cast::<Node<T, N>>()).unwrap();
             (median, right)
         };
@@ -487,9 +487,9 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
         // }
         // debugln!(
         //     "splitted~ {:?} {:?} {:?}",
-        //     Fmt(|f| self.format(f, depth - 1)),
+        //     Fmt(|f| self.format(f, height - 1)),
         //     self,
-        //     Fmt(|f| right.format(f, depth))
+        //     Fmt(|f| right.format(f, height))
         // );
 
         Some((median, right))
@@ -665,7 +665,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
         &mut self,
         value: K,
         cmp: F,
-        depth: usize,
+        height: usize,
     ) -> Option<T> {
         // find the index of the value, or try to remove from a child.
         let idx = 'search: {
@@ -687,11 +687,11 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
 
             // value not found, remove from children.
             let child = self.children_mut()[idx].unwrap();
-            let (removed, len) = if depth > 1 {
+            let (removed, len) = if height > 1 {
                 // SAFETY: idx <= self.inner.len, so self.children[idx] is a valid child.
                 let child = unsafe { child.cast::<InternalNode<T, N>>().as_mut() };
                 test_assert!(child.inner.internal, "child is internal");
-                (child.remove(value, cmp, depth - 1), child.inner.len)
+                (child.remove(value, cmp, height - 1), child.inner.len)
             } else {
                 // SAFETY: idx <= self.inner.len, so self.children[idx] is a valid child.
                 let child = unsafe { child.cast::<LeafNode<T, N>>().as_mut() };
@@ -702,21 +702,21 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
             debugln!("removed from child {:?} {:?}", removed, len);
 
             if len < Self::MIN_VALUES {
-                self.rebalance(idx, depth);
+                self.rebalance(idx, height);
             }
 
             return removed;
         };
         debugln!("removing {:?} at {:?}", value, idx);
 
-        let value = self.remove_at_idx(depth, idx);
+        let value = self.remove_at_idx(height, idx);
 
         Some(value)
     }
 
     /// Rebalance the child at index `idx`.
-    fn rebalance(&mut self, idx: usize, depth: usize) {
-        debugln!("rebalacing child {:?} at depth {:?}", idx, depth);
+    fn rebalance(&mut self, idx: usize, height: usize) {
+        debugln!("rebalacing child {:?} at height {:?}", idx, height);
 
         // if the right sibling has more than N/2 elements, rotate left
         if idx < self.inner.len
@@ -728,7 +728,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
 
             // SAFETY: idx < self.inner.len, so self.children[idx] and self.children[idx + 1] are
             // valid children. All nodes are valid LeaftNodes, so it is safe to cast them to
-            // LeafNode, regardless of the depth.
+            // LeafNode, regardless of the height.
             let left = unsafe { left_ptr.cast::<LeafNode<T, N>>().as_mut() };
             let right = unsafe { right_ptr.cast::<LeafNode<T, N>>().as_mut() };
 
@@ -750,8 +750,8 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
             }
 
             // move the first child of right to the last child of left.
-            if depth > 1 {
-                // SAFETY: depth > 1, so the children are InternalNodes.
+            if height > 1 {
+                // SAFETY: height > 1, so the children are InternalNodes.
                 let left = unsafe { left_ptr.cast::<InternalNode<T, N>>().as_mut() };
                 let right = unsafe { right_ptr.cast::<InternalNode<T, N>>().as_mut() };
                 test_assert!(left.inner.internal, "left is internal");
@@ -775,7 +775,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
 
             // SAFETY: idx > 0, so self.children[idx] and self.children[idx - 1] are
             // valid children. All nodes are valid LeaftNodes, so it is safe to cast them to
-            // LeafNode, regardless of the depth.
+            // LeafNode, regardless of the height.
             let left = unsafe { left_ptr.cast::<LeafNode<T, N>>().as_mut() };
             let right = unsafe { right_ptr.cast::<LeafNode<T, N>>().as_mut() };
 
@@ -786,11 +786,8 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
             // we shift the elements of left to the right. We update the lengths accordingly.
             unsafe {
                 test_assert!(right.len < N);
-                std::ptr::copy(
-                    right.values.as_ptr(),
-                    right.values.as_mut_ptr().add(1),
-                    right.len,
-                );
+                let values_ptr = right.values.as_mut_ptr();
+                std::ptr::copy(values_ptr, values_ptr.add(1), right.len);
                 right.len += 1;
 
                 right.values[0].write(self.inner.values[idx - 1].assume_init_read());
@@ -800,8 +797,8 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
             }
 
             // move the last child of left to the first child of right.
-            if depth > 1 {
-                // SAFETY: depth > 1, so the children are InternalNodes.
+            if height > 1 {
+                // SAFETY: height > 1, so the children are InternalNodes.
                 let left = unsafe { left_ptr.cast::<InternalNode<T, N>>().as_mut() };
                 let right = unsafe { right_ptr.cast::<InternalNode<T, N>>().as_mut() };
 
@@ -831,7 +828,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
         let right_ptr = self.children()[i + 1].unwrap();
 
         // SAFETY: we check valid of i above. All nodes are valid LeaftNodes, so it is safe to cast
-        // them to LeafNode, regardless of the depth.
+        // them to LeafNode, regardless of the height.
         let left = unsafe { left_ptr.cast::<LeafNode<T, N>>().as_mut() };
         let right = unsafe { right_ptr.cast::<LeafNode<T, N>>().as_mut() };
 
@@ -858,7 +855,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
             let rlen = right.len;
             left.len = left.len + 1 + right.len;
 
-            if depth > 1 {
+            if height > 1 {
                 let left = left_ptr.cast::<InternalNode<T, N>>().as_mut();
                 let right = right_ptr.cast::<InternalNode<T, N>>().as_mut();
 
@@ -882,16 +879,25 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
             self.inner.len -= 1;
         }
 
+        // drop right allocation
+        unsafe {
+            if height > 1 {
+                let _ = Box::from_raw(right_ptr.cast::<InternalNode<T, N>>().as_ptr());
+            } else {
+                let _ = Box::from_raw(right_ptr.cast::<LeafNode<T, N>>().as_ptr());
+            }
+        }
+
         debugln!("{:?}", self);
     }
 
-    fn remove_at_idx(&mut self, depth: usize, idx: usize) -> T {
+    fn remove_at_idx(&mut self, height: usize, idx: usize) -> T {
         // replace the value with the biggest value of the left child's subtree.
         let value;
         let predecessor;
         let len;
 
-        if depth > 1 {
+        if height > 1 {
             let left_child = unsafe {
                 self.children_mut()[idx]
                     .expect("child is None")
@@ -899,12 +905,12 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
                     .as_mut()
             };
 
-            predecessor = left_child.remove_max_value(depth - 1);
+            predecessor = left_child.remove_max_value(height - 1);
 
             len = left_child.inner.len;
         } else {
             // SAFETY: `idx` is a index of a valid element in self.values, so the same index is
-            // valid in self.children. The child is a leaf node (depth==1), so it is safe to cast
+            // valid in self.children. The child is a leaf node (height==1), so it is safe to cast
             // it to LeafNode.
             let left_child = unsafe {
                 self.children_mut()[idx]
@@ -933,15 +939,15 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
         );
 
         if len < Self::MIN_VALUES {
-            self.rebalance(idx, depth);
+            self.rebalance(idx, height);
         }
 
         value
     }
 
-    fn remove_max_value(&mut self, depth: usize) -> T {
-        debugln!("removing max value at depth {:?}", depth);
-        if depth > 1 {
+    fn remove_max_value(&mut self, height: usize) -> T {
+        debugln!("removing max value at height {:?}", height);
+        if height > 1 {
             let left_child = unsafe {
                 let len = self.inner.len;
                 self.children_mut()[len]
@@ -950,16 +956,16 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
                     .as_mut()
             };
 
-            let value = left_child.remove_max_value(depth - 1);
+            let value = left_child.remove_max_value(height - 1);
 
             if left_child.inner.len < Self::MIN_VALUES {
-                self.rebalance(self.inner.len, depth);
+                self.rebalance(self.inner.len, height);
             }
 
             value
         } else {
             // SAFETY: `idx` is a index of a valid element in self.values, so the same index is
-            // valid in self.children. The child is a leaf node (depth==1), so it is safe to cast
+            // valid in self.children. The child is a leaf node (height==1), so it is safe to cast
             // it to LeafNode.
             let left_child = unsafe {
                 let len = self.inner.len;
@@ -981,10 +987,62 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
             };
 
             if left_child.len < Self::MIN_VALUES {
-                self.rebalance(self.inner.len, depth);
+                self.rebalance(self.inner.len, height);
             }
 
             value
+        }
+    }
+}
+
+impl<T, const N: usize> Drop for BTree<T, N> {
+    fn drop(&mut self) {
+        if self.height == 0 {
+            unsafe {
+                self.root.inner.drop_in_place();
+            }
+        } else {
+            unsafe {
+                self.root.drop_in_place(self.height);
+            }
+        }
+    }
+}
+impl<T, const N: usize> LeafNode<T, N> {
+    /// SAFETY: should only be called once, on BTree drop.
+    unsafe fn drop_in_place(&mut self) {
+        // SAFETY: all elements with index < self.len are initialized
+        unsafe {
+            for i in 0..self.len {
+                std::ptr::drop_in_place(self.values[i].as_mut_ptr());
+            }
+        }
+    }
+}
+impl<T, const N: usize> InternalNode<T, N> {
+    /// SAFETY: should only be called once, on BTree drop.
+    unsafe fn drop_in_place(&mut self, height: usize) {
+        let len = self.inner.len + 1;
+        for child in &mut self.children_mut()[..len] {
+            let child = child.expect("child is None");
+            if height > 1 {
+                // SAFETY: if height > 1, the children are InternalNodes.
+                unsafe {
+                    debugln!("drop internal {:?}", child);
+                    let mut child = Box::from_raw(child.as_ptr().cast::<InternalNode<T, N>>());
+                    (*child).drop_in_place(height - 1);
+                }
+            } else {
+                // SAFETY: if height == 1, the children are LeaftNodes.
+                unsafe {
+                    debugln!("drop leaf {:?}", child);
+                    let mut child = Box::from_raw(child.as_ptr().cast::<LeafNode<T, N>>());
+                    (*child).drop_in_place();
+                }
+            }
+        }
+        for value in &mut self.inner.values[..self.inner.len] {
+            std::ptr::drop_in_place(value.as_mut_ptr());
         }
     }
 }
