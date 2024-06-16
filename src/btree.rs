@@ -111,6 +111,33 @@ impl<T: Debug, const N: usize> BTree<T, N> {
                 .is_none());
         }
     }
+
+    pub fn remove<K: Debug, F: Fn(&K, &T) -> Ordering>(&mut self, value: K, cmp: F) -> Option<T> {
+        if self.depth == 0 {
+            debugln!("removing {:?} from leaf root", value);
+            self.root.inner.remove(value, cmp)
+        } else {
+            debugln!("removing {:?} from internal root", value);
+            let v = self.root.remove(value, cmp, self.depth);
+
+            // if the root has only one child, we can replace the root with a LeafNode.
+            if self.root.inner.len == 0 {
+                debugln!("root has only one child");
+                let child = self.root.children_mut()[0].unwrap();
+                if self.depth > 1 {
+                    self.root =
+                        *unsafe { Box::from_raw(child.as_ptr().cast::<InternalNode<T, N>>()) };
+                } else {
+                    self.root.inner =
+                        *unsafe { Box::from_raw(child.as_ptr().cast::<LeafNode<T, N>>()) };
+                }
+                self.depth -= 1;
+                debugln!("new root {:?}", self);
+            }
+
+            v
+        }
+    }
 }
 impl<T: Clone, const N: usize> BTree<T, N> {
     fn values(&self) -> Vec<T> {
@@ -124,6 +151,7 @@ impl<T: Clone, const N: usize> BTree<T, N> {
 impl<T: Clone, const N: usize> InternalNode<T, N> {
     fn values(&self, depth: usize) -> Vec<T> {
         test_assert!(depth > 0);
+        test_assert!(self.inner.internal, "node is internal");
         let mut values: Vec<T> = Vec::new();
         for (child, value) in self.children()[..self.inner.len + 1]
             .iter()
@@ -189,6 +217,11 @@ impl<T, const N: usize> InternalNode<T, N> {
 #[repr(transparent)]
 #[derive(Debug)]
 struct Node<T, const N: usize>(LeafNode<T, N>);
+impl<T, const N: usize> Node<T, N> {
+    fn len(&self) -> usize {
+        self.0.len
+    }
+}
 
 struct LeafNode<T: Sized, const N: usize> {
     values: [MaybeUninit<T>; N],
@@ -197,6 +230,8 @@ struct LeafNode<T: Sized, const N: usize> {
     internal: bool,
 }
 impl<T: Debug, const N: usize> LeafNode<T, N> {
+    const MIN_VALUES: usize = N / 2;
+
     fn new() -> Self {
         LeafNode {
             values: [(); N].map(|_| MaybeUninit::uninit()),
@@ -251,7 +286,7 @@ impl<T: Debug, const N: usize> LeafNode<T, N> {
         // let median;
 
         // check if we need to insert the value in the self or right node
-        let middle = N / 2;
+        let middle = Self::MIN_VALUES;
         // SAFETY: self is fully initialized
         if cmp(&value, unsafe { self.values[middle].assume_init_ref() }).is_lt() {
             // we need to insert the value in the self node
@@ -305,6 +340,50 @@ impl<T: Debug, const N: usize> LeafNode<T, N> {
             (median, right)
         }
     }
+
+    fn remove<K: Debug, F: Fn(&K, &T) -> Ordering>(&mut self, value: K, cmp: F) -> Option<T> {
+        // find the index of the value, if any
+        let idx = 'search: {
+            for (i, v) in self.values().enumerate() {
+                if cmp(&value, v).is_eq() {
+                    break 'search i;
+                }
+            }
+
+            debugln!(
+                "could not find value {:?}: {:?}",
+                value,
+                self.values().collect::<Vec<_>>()
+            );
+
+            return None;
+        };
+
+        // remove the value from self.values
+        debugln!("removing {:?} at {:?}", value, idx);
+
+        let value = self.remove_at_idx(idx);
+
+        Some(value)
+    }
+
+    fn remove_at_idx(&mut self, idx: usize) -> T {
+        let value;
+        // SAFETY: all elements with index < self.len are initialized. `self.values[i]` is
+        // moved out of the array, and the rest of the array is shifted to the left. The
+        // length of the array is updated accordingly.
+        unsafe {
+            value = self.values[idx].assume_init_read();
+            let values_ptr = self.values.as_mut_ptr();
+            std::ptr::copy(
+                values_ptr.add(idx + 1),
+                values_ptr.add(idx),
+                self.len - (idx + 1),
+            );
+            self.len -= 1;
+        }
+        value
+    }
 }
 impl<T, const N: usize> LeafNode<T, N> {
     fn values(&self) -> impl Iterator<Item = &T> {
@@ -325,6 +404,9 @@ struct InternalNode<T, const N: usize> {
     child0: Option<NonNull<Node<T, N>>>,
     /// The last N children of this node, the first child is `child0`.
     childs: [Option<NonNull<Node<T, N>>>; N],
+}
+impl<T, const N: usize> InternalNode<T, N> {
+    const MIN_VALUES: usize = N / 2;
 }
 impl<T: Debug, const N: usize> InternalNode<T, N> {
     fn new() -> Self {
@@ -451,10 +533,10 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
         self.inner.len += 1;
 
         test_assert!(
-            self.inner.len >= N / 2,
+            self.inner.len >= Self::MIN_VALUES,
             "invariant broken {:?} < {:?}",
             self.inner.len,
-            N / 2
+            Self::MIN_VALUES
         );
         test_assert!(self.children()[..self.inner.len + 1]
             .iter()
@@ -475,7 +557,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
         // let median;
 
         // check if we need to insert the value in the self or right node
-        let middle = N / 2;
+        let middle = Self::MIN_VALUES;
         // SAFETY: self is fully initialized
         let (median, right) = if unsafe {
             cmp(&value, self.inner.values[middle].assume_init_ref()).is_lt()
@@ -575,6 +657,333 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
 
         (median, right)
     }
+
+    fn remove<K: Debug, F: Fn(&K, &T) -> Ordering>(
+        &mut self,
+        value: K,
+        cmp: F,
+        depth: usize,
+    ) -> Option<T> {
+        // find the index of the value, or try to remove from a child.
+        let idx = 'search: {
+            let mut idx = self.inner.len;
+            for (i, v) in self.inner.values().enumerate() {
+                debugln!("comparing {:?} {:?}", value, v);
+                let ord = cmp(&value, v);
+                if ord.is_eq() {
+                    break 'search i;
+                }
+                if ord.is_lt() {
+                    debugln!("value is greater");
+                    idx = i;
+                    break;
+                }
+            }
+
+            debugln!("value not found, trying to remove from child {:?}", idx);
+
+            // value not found, remove from children.
+            let child = self.children_mut()[idx].unwrap();
+            let (removed, len) = if depth > 1 {
+                // SAFETY: idx <= self.inner.len, so self.children[idx] is a valid child.
+                let child = unsafe { child.cast::<InternalNode<T, N>>().as_mut() };
+                test_assert!(child.inner.internal, "child is internal");
+                (child.remove(value, cmp, depth - 1), child.inner.len)
+            } else {
+                // SAFETY: idx <= self.inner.len, so self.children[idx] is a valid child.
+                let child = unsafe { child.cast::<LeafNode<T, N>>().as_mut() };
+                test_assert!(!child.internal, "child is leaf");
+                (child.remove(value, cmp), child.len)
+            };
+
+            debugln!("removed from child {:?} {:?}", removed, len);
+
+            if len < Self::MIN_VALUES {
+                self.rebalance(idx, depth);
+            }
+
+            return removed;
+        };
+        debugln!("removing {:?} at {:?}", value, idx);
+
+        let value = self.remove_at_idx(depth, idx);
+
+        Some(value)
+    }
+
+    /// Rebalance the child at index `idx`.
+    fn rebalance(&mut self, idx: usize, depth: usize) {
+        debugln!("rebalacing child {:?} at depth {:?}", idx, depth);
+
+        // if the right sibling has more than N/2 elements, rotate left
+        if idx < self.inner.len
+            && unsafe { self.children()[idx + 1].unwrap().as_ref().len() } > Self::MIN_VALUES
+        {
+            debugln!("rotating left");
+            let left_ptr = self.children()[idx].unwrap();
+            let right_ptr = self.children()[idx + 1].unwrap();
+
+            // SAFETY: idx < self.inner.len, so self.children[idx] and self.children[idx + 1] are
+            // valid children. All nodes are valid LeaftNodes, so it is safe to cast them to
+            // LeafNode, regardless of the depth.
+            let left = unsafe { left_ptr.cast::<LeafNode<T, N>>().as_mut() };
+            let right = unsafe { right_ptr.cast::<LeafNode<T, N>>().as_mut() };
+
+            // move the separator the the left child
+
+            // SAFETY: left is not full, right has at least N/2 elements. We move the separator to
+            // the left child, and move the first element of right to the separator position. And
+            // we shift the elements of right to the left. We update the lengths accordingly.
+            unsafe {
+                test_assert!(left.len < N);
+                left.values[left.len].write(self.inner.values[idx].assume_init_read());
+                left.len += 1;
+
+                self.inner.values[idx].write(right.values[0].assume_init_read());
+
+                let rvalues_ptr = right.values.as_mut_ptr();
+                std::ptr::copy(rvalues_ptr.add(1), rvalues_ptr, right.len - 1);
+                right.len -= 1;
+            }
+
+            // move the first child of right to the last child of left.
+            if depth > 1 {
+                // SAFETY: depth > 1, so the children are InternalNodes.
+                let left = unsafe { left_ptr.cast::<InternalNode<T, N>>().as_mut() };
+                let right = unsafe { right_ptr.cast::<InternalNode<T, N>>().as_mut() };
+                test_assert!(left.inner.internal, "left is internal");
+                test_assert!(left.inner.internal, "right is internal");
+
+                let llen = left.inner.len;
+                let rlen = right.inner.len;
+                left.children_mut()[llen] = right.children_mut()[0];
+                right.children_mut().copy_within(1..rlen + 2, 0);
+            }
+
+            return;
+        }
+
+        // if the left sibling has more than N/2 elements, rotate right
+        if idx > 0 && unsafe { self.children()[idx - 1].unwrap().as_ref().len() } > Self::MIN_VALUES
+        {
+            debugln!("rotating right");
+            let left_ptr = self.children()[idx - 1].unwrap();
+            let right_ptr = self.children()[idx].unwrap();
+
+            // SAFETY: idx > 0, so self.children[idx] and self.children[idx - 1] are
+            // valid children. All nodes are valid LeaftNodes, so it is safe to cast them to
+            // LeafNode, regardless of the depth.
+            let left = unsafe { left_ptr.cast::<LeafNode<T, N>>().as_mut() };
+            let right = unsafe { right_ptr.cast::<LeafNode<T, N>>().as_mut() };
+
+            // move the separator the the right child
+
+            // SAFETY: right is not full, left has at least N/2 elements. We move the separator to
+            // the right child, and move the last element of left to the separator position. And
+            // we shift the elements of left to the right. We update the lengths accordingly.
+            unsafe {
+                test_assert!(right.len < N);
+                std::ptr::copy(
+                    right.values.as_ptr(),
+                    right.values.as_mut_ptr().add(1),
+                    right.len,
+                );
+                right.len += 1;
+
+                right.values[0].write(self.inner.values[idx - 1].assume_init_read());
+                left.len -= 1;
+
+                self.inner.values[idx - 1].write(left.values[left.len].assume_init_read());
+            }
+
+            // move the last child of left to the first child of right.
+            if depth > 1 {
+                // SAFETY: depth > 1, so the children are InternalNodes.
+                let left = unsafe { left_ptr.cast::<InternalNode<T, N>>().as_mut() };
+                let right = unsafe { right_ptr.cast::<InternalNode<T, N>>().as_mut() };
+
+                let rlen = left.inner.len;
+                let llen = left.inner.len;
+                right.children_mut().copy_within(0..rlen, 1);
+                right.children_mut()[0] = left.children_mut()[llen + 1];
+            }
+
+            return;
+        }
+
+        // merge with a sibling
+
+        let i;
+        if idx < self.inner.len {
+            i = idx;
+        } else if idx > 0 {
+            i = idx - 1;
+        } else {
+            unreachable!();
+        }
+
+        debugln!("merge {:?} and {:?}", i, i + 1);
+
+        let left_ptr = self.children()[i].unwrap();
+        let right_ptr = self.children()[i + 1].unwrap();
+
+        // SAFETY: we check valid of i above. All nodes are valid LeaftNodes, so it is safe to cast
+        // them to LeafNode, regardless of the depth.
+        let left = unsafe { left_ptr.cast::<LeafNode<T, N>>().as_mut() };
+        let right = unsafe { right_ptr.cast::<LeafNode<T, N>>().as_mut() };
+
+        // move the separator to the left child, and move all elements of right to left
+
+        // SAFETY: left has less than N/2 elements, right has less than N/2 elements. So we can
+        // move all elements to left.
+        unsafe {
+            test_assert!(
+                left.len + 1 + right.len <= N,
+                "{} {} {}",
+                left.len,
+                right.len,
+                N
+            );
+            left.values[left.len].write(self.inner.values[i].assume_init_read());
+            std::ptr::copy_nonoverlapping(
+                right.values.as_ptr(),
+                left.values.as_mut_ptr().add(left.len + 1),
+                right.len,
+            );
+
+            let llen = left.len;
+            let rlen = right.len;
+            left.len = left.len + 1 + right.len;
+
+            if depth > 1 {
+                let left = left_ptr.cast::<InternalNode<T, N>>().as_mut();
+                let right = right_ptr.cast::<InternalNode<T, N>>().as_mut();
+
+                left.children_mut()[llen + 1..llen + 1 + rlen + 1]
+                    .copy_from_slice(&right.children()[..rlen + 1]);
+            }
+        }
+
+        debugln!("left {:?}", unsafe {
+            left_ptr.cast::<LeafNode<T, N>>().as_mut()
+        });
+
+        // remove the separator and right child, and shift the rest of the children
+
+        // SAFETY: i is a valid index, and the length of the array is updated accordingly.
+        unsafe {
+            let len = self.inner.len;
+            let values_ptr = self.inner.values.as_mut_ptr();
+            std::ptr::copy(values_ptr.add(i + 1), values_ptr.add(i), len - (i + 1));
+            self.children_mut().copy_within(i + 2..len + 1, i + 1);
+            self.inner.len -= 1;
+        }
+
+        debugln!("{:?}", self);
+    }
+
+    fn remove_at_idx(&mut self, depth: usize, idx: usize) -> T {
+        // replace the value with the biggest value of the left child's subtree.
+        let value;
+        let predecessor;
+        let len;
+
+        if depth > 1 {
+            let left_child = unsafe {
+                self.children_mut()[idx]
+                    .expect("child is None")
+                    .cast::<InternalNode<T, N>>()
+                    .as_mut()
+            };
+
+            predecessor = left_child.remove_max_value(depth - 1);
+
+            len = left_child.inner.len;
+        } else {
+            // SAFETY: `idx` is a index of a valid element in self.values, so the same index is
+            // valid in self.children. The child is a leaf node (depth==1), so it is safe to cast
+            // it to LeafNode.
+            let left_child = unsafe {
+                self.children_mut()[idx]
+                    .expect("child is None")
+                    .cast::<LeafNode<T, N>>()
+                    .as_mut()
+            };
+
+            debugln!("removing from leaf {:?}", left_child);
+
+            //  pop from left_chid
+
+            // SAFETY: the last element in left_child is initialized, and is moved out, and the
+            // length of the array is updated accordingly.
+            unsafe {
+                left_child.len -= 1;
+                predecessor = left_child.values[left_child.len].assume_init_read();
+            }
+
+            len = left_child.len;
+        }
+        value = std::mem::replace(
+            // SAFETY: idx is a valid index.
+            unsafe { self.inner.values[idx].assume_init_mut() },
+            predecessor,
+        );
+
+        if len < Self::MIN_VALUES {
+            self.rebalance(idx, depth);
+        }
+
+        value
+    }
+
+    fn remove_max_value(&mut self, depth: usize) -> T {
+        debugln!("removing max value at depth {:?}", depth);
+        if depth > 1 {
+            let left_child = unsafe {
+                let len = self.inner.len;
+                self.children_mut()[len]
+                    .expect("child is None")
+                    .cast::<InternalNode<T, N>>()
+                    .as_mut()
+            };
+
+            let value = left_child.remove_max_value(depth - 1);
+
+            if left_child.inner.len < Self::MIN_VALUES {
+                self.rebalance(self.inner.len, depth);
+            }
+
+            value
+        } else {
+            // SAFETY: `idx` is a index of a valid element in self.values, so the same index is
+            // valid in self.children. The child is a leaf node (depth==1), so it is safe to cast
+            // it to LeafNode.
+            let left_child = unsafe {
+                let len = self.inner.len;
+                self.children_mut()[len]
+                    .expect("child is None")
+                    .cast::<LeafNode<T, N>>()
+                    .as_mut()
+            };
+
+            debugln!("removing from leaf {:?}", left_child);
+
+            //  pop from left_chid
+
+            // SAFETY: the last element in left_child is initialized, and is moved out, and the
+            // length of the array is updated accordingly.
+            let value = unsafe {
+                left_child.len -= 1;
+                left_child.values[left_child.len].assume_init_read()
+            };
+
+            if left_child.len < Self::MIN_VALUES {
+                self.rebalance(self.inner.len, depth);
+            }
+
+            value
+        }
+    }
 }
 
 #[cfg(test)]
@@ -625,7 +1034,7 @@ mod test {
     }
 
     #[test]
-    fn prop_fuzz() {
+    fn prop_fuzz_insertion() {
         let shuffle = (0..128u16)
             .prop_map(|n| (0..n as i32).collect::<Vec<i32>>())
             .prop_shuffle();
@@ -634,7 +1043,7 @@ mod test {
 
         runner
             .run(&shuffle, |values| {
-                println!("{:?}", values);
+                debugln!("{:?}", values);
                 check_sort(values);
                 Ok(())
             })
@@ -678,6 +1087,390 @@ mod test {
         let mut values = values.clone();
         values.sort();
         let tree_values = tree.values();
+        assert_eq!(values, tree_values);
+    }
+
+    #[test]
+    fn prop_fuzz_removal() {
+        let shuffle = (0..64u16)
+            .prop_map(|n| {
+                let mut x = (0..n as i32)
+                    .map(|x| (x, true))
+                    .collect::<Vec<(i32, bool)>>();
+                x.extend((0..n as i32).map(|x| (x, false)));
+                x
+            })
+            .prop_shuffle();
+
+        let mut runner = proptest::test_runner::TestRunner::default();
+        runner
+            .run(&shuffle, |values| {
+                println!("{:?}", values);
+                check_removal(values);
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    fn prop_fuzz_removal_parallel() {
+        let (send, recv) = std::sync::mpsc::sync_channel(0);
+        let threads = 4; // std::thread::available_parallelism().map_or(4, |x| x.get());
+        println!("threads: {}", threads);
+        for _ in 0..threads {
+            let send = send.clone();
+            std::thread::spawn(move || match std::panic::catch_unwind(prop_fuzz_removal) {
+                Ok(_) => {}
+                Err(_) => send.send(()).unwrap(),
+            });
+        }
+
+        drop(send);
+        let _ = recv.recv();
+    }
+
+    #[test]
+    fn removal_case1() {
+        check_removal(vec![
+            (0, false),
+            (1, false),
+            (2, false),
+            (3, false),
+            (0, true),
+            (1, true),
+            (2, true),
+            (3, true),
+        ]);
+    }
+
+    #[test]
+    fn removal_case2() {
+        check_removal(vec![
+            (1, false),
+            (0, false),
+            (2, false),
+            (6, false),
+            (1, true),
+            (5, false),
+            (3, false),
+            (0, true),
+            (5, true),
+            (4, false),
+            (6, true),
+            (3, true),
+            (4, true),
+            (2, true),
+        ])
+    }
+
+    #[test]
+    fn removal_case3() {
+        check_removal(vec![
+            (2, false),
+            (1, false),
+            (3, false),
+            (4, false),
+            (4, true),
+            (2, true),
+            (0, false),
+        ])
+    }
+
+    #[test]
+    fn removal_case4() {
+        check_removal(vec![
+            (4, false),
+            (1, false),
+            (0, false),
+            (6, false),
+            (7, false),
+            (5, false),
+            (0, true),
+            (3, false),
+            (2, false),
+            (3, true),
+            (6, true),
+            (1, true),
+            (4, true),
+            (2, true),
+        ])
+    }
+
+    #[test]
+    fn removal_case5() {
+        check_removal(vec![
+            (6, false),
+            (7, false),
+            (3, false),
+            (0, false),
+            (3, true),
+            (1, false),
+            (4, false),
+            (7, true),
+            (2, false),
+        ])
+    }
+
+    #[test]
+    fn removal_case6() {
+        check_removal(vec![
+            (2, false),
+            (4, false),
+            (1, false),
+            (0, false),
+            (3, false),
+            (6, false),
+            (7, false),
+            (5, false),
+            (10, false),
+            (8, false),
+            (9, false),
+            (4, true),
+            (3, true),
+            (7, true),
+            (5, true),
+        ])
+    }
+
+    #[test]
+    fn removal_case7() {
+        check_removal(vec![
+            (7, false),
+            (1, false),
+            (8, false),
+            (0, false),
+            (6, false),
+            (2, false),
+            (5, false),
+            (4, false),
+            (10, false),
+            (9, false),
+            (8, true),
+            (3, false),
+            (4, true),
+            (7, true),
+            (6, true),
+            (0, true),
+        ])
+    }
+
+    #[test]
+    fn removal_case8() {
+        check_removal(vec![
+            (2, true),
+            (0, true),
+            (1, false),
+            (8, false),
+            (3, false),
+            (8, true),
+            (9, false),
+            (2, false),
+            (3, true),
+            (7, false),
+            (9, true),
+            (5, true),
+            (1, true),
+            (6, false),
+            (0, false),
+            (5, false),
+            (4, true),
+            (6, true),
+            (4, false),
+            (7, true),
+        ])
+    }
+
+    #[test]
+    fn removal_case9() {
+        check_removal(vec![
+            (20, false),
+            (0, false),
+            (0, true),
+            (15, false),
+            (13, false),
+            (13, true),
+            (1, true),
+            (2, false),
+            (18, true),
+            (8, false),
+            (6, false),
+            (15, true),
+            (22, true),
+            (17, true),
+            (21, false),
+            (4, false),
+            (9, false),
+            (11, false),
+            (3, false),
+            (6, true),
+            (4, true),
+            (21, true),
+            (9, true),
+            (18, false),
+            (12, false),
+            (7, false),
+            (1, false),
+            (2, true),
+            (14, true),
+            (10, true),
+            (8, true),
+            (14, false),
+            (17, false),
+            (10, false),
+            (5, false),
+            (16, false),
+            (22, false),
+            (11, true),
+            (19, false),
+            (19, true),
+            (7, true),
+            (5, true),
+        ])
+    }
+
+    #[test]
+    fn removal_case10() {
+        check_removal(vec![
+            (6, false),
+            (5, false),
+            (4, false),
+            (5, true),
+            (2, false),
+            (9, false),
+            (8, false),
+            (3, false),
+            (15, false),
+            (0, false),
+            (18, false),
+            (13, false),
+            (17, false),
+            (10, false),
+            (14, false),
+            (12, false),
+            (6, true),
+            (7, false),
+            (19, false),
+            (7, true),
+            (17, true),
+            (21, false),
+            (16, false),
+            (4, true),
+            (20, false),
+            (8, true),
+            (3, true),
+            (1, false),
+            (19, true),
+            (11, false),
+            (2, true),
+            (15, true),
+            (13, true),
+        ])
+    }
+
+    fn check_removal(values: Vec<(i32, bool)>) {
+        let values = values
+            .into_iter()
+            .map(|(x, b)| (TestItem(x), b))
+            .collect::<Vec<_>>();
+
+        let mut tree = BTree::<TestItem, 3>::new();
+        let cmp = TestItem::cmp;
+
+        let mut final_values = Vec::new();
+
+        debugln!("{:?}", tree);
+        for (value, remove) in &values {
+            if *remove {
+                let x = tree.remove(value.clone(), cmp);
+                debugln!("remove {:?} {:?}", value, x);
+                if let Some(i) = final_values.iter().position(|x| x == value) {
+                    final_values.remove(i);
+                }
+            } else {
+                debugln!("insert {:?}", value);
+                tree.insert(value.clone(), cmp);
+                final_values.push(value.clone());
+            }
+            debugln!("{:?}", tree);
+        }
+        let mut values = final_values.into_iter().collect::<Vec<_>>();
+        values.sort_by(cmp);
+        let tree_values = tree.values();
+
+        assert_eq!(values, tree_values);
+    }
+
+    #[test]
+    fn prop_fuzz_removal4() {
+        let shuffle = (0..64u16)
+            .prop_map(|n| {
+                let mut x = (0..n as i32)
+                    .map(|x| (x, true))
+                    .collect::<Vec<(i32, bool)>>();
+                x.extend((0..n as i32).map(|x| (x, false)));
+                x
+            })
+            .prop_shuffle();
+
+        let mut runner = proptest::test_runner::TestRunner::default();
+        runner
+            .run(&shuffle, |values| {
+                println!("{:?}", values);
+                check_removal4(values);
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn removal4_case1() {
+        check_removal4(vec![
+            (0, true),
+            (1, true),
+            (3, true),
+            (2, true),
+            (5, true),
+            (4, true),
+            (5, false),
+            (0, false),
+            (4, false),
+            (3, false),
+            (2, false),
+            (1, false),
+        ])
+    }
+
+    fn check_removal4(values: Vec<(i32, bool)>) {
+        let values = values
+            .into_iter()
+            .map(|(x, b)| (TestItem(x), b))
+            .collect::<Vec<_>>();
+
+        let mut tree = BTree::<TestItem, 4>::new();
+        let cmp = TestItem::cmp;
+
+        let mut final_values = Vec::new();
+
+        debugln!("{:?}", tree);
+        for (value, remove) in &values {
+            if *remove {
+                let x = tree.remove(value.clone(), cmp);
+                debugln!("remove {:?} {:?}", value, x);
+                if let Some(i) = final_values.iter().position(|x| x == value) {
+                    final_values.remove(i);
+                }
+            } else {
+                debugln!("insert {:?}", value);
+                tree.insert(value.clone(), cmp);
+                final_values.push(value.clone());
+            }
+            debugln!("{:?}", tree);
+        }
+        let mut values = final_values.into_iter().collect::<Vec<_>>();
+        values.sort_by(cmp);
+        let tree_values = tree.values();
+
         assert_eq!(values, tree_values);
     }
 }
