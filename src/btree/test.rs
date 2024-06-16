@@ -425,7 +425,7 @@ fn check_removal(values: Vec<(i32, bool)>) {
     debugln!("{:?}", tree);
     for (value, remove) in &values {
         if *remove {
-            let x = tree.remove(value.clone(), cmp);
+            let x = tree.remove(value, cmp);
             debugln!("remove {:?} {:?}", value, x);
             if let Some(i) = final_values.iter().position(|x| x == value) {
                 final_values.remove(i);
@@ -605,7 +605,7 @@ fn check_removal4(values: Vec<(i32, bool)>) {
     debugln!("{:?}", tree);
     for (value, remove) in &values {
         if *remove {
-            let x = tree.remove(value.clone(), cmp);
+            let x = tree.remove(value, cmp);
             debugln!("remove {:?} {:?}", value, x);
             if let Some(i) = final_values.iter().position(|x| x == value) {
                 final_values.remove(i);

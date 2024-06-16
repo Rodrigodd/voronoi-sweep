@@ -115,7 +115,11 @@ impl<T: Debug, const N: usize> BTree<T, N> {
         }
     }
 
-    pub fn remove<K: Debug, F: Fn(&K, &T) -> Ordering>(&mut self, value: K, cmp: F) -> Option<T> {
+    pub fn remove<K: Debug + Copy, F: Fn(K, &T) -> Ordering>(
+        &mut self,
+        value: K,
+        cmp: F,
+    ) -> Option<T> {
         if self.height == 0 {
             debugln!("removing {:?} from leaf root", value);
             self.root.inner.remove(value, cmp)
@@ -344,11 +348,11 @@ impl<T: Debug, const N: usize> LeafNode<T, N> {
         }
     }
 
-    fn remove<K: Debug, F: Fn(&K, &T) -> Ordering>(&mut self, value: K, cmp: F) -> Option<T> {
+    fn remove<K: Debug + Copy, F: Fn(K, &T) -> Ordering>(&mut self, value: K, cmp: F) -> Option<T> {
         // find the index of the value, if any
         let idx = 'search: {
             for (i, v) in self.values().enumerate() {
-                if cmp(&value, v).is_eq() {
+                if cmp(value, v).is_eq() {
                     break 'search i;
                 }
             }
@@ -661,7 +665,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
         (median, right)
     }
 
-    fn remove<K: Debug, F: Fn(&K, &T) -> Ordering>(
+    fn remove<K: Debug + Copy, F: Fn(K, &T) -> Ordering>(
         &mut self,
         value: K,
         cmp: F,
@@ -672,7 +676,7 @@ impl<T: Debug, const N: usize> InternalNode<T, N> {
             let mut idx = self.inner.len;
             for (i, v) in self.inner.values().enumerate() {
                 debugln!("comparing {:?} {:?}", value, v);
-                let ord = cmp(&value, v);
+                let ord = cmp(value, v);
                 if ord.is_eq() {
                     break 'search i;
                 }
