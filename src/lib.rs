@@ -11,6 +11,7 @@ mod test;
 #[macro_export]
 macro_rules! debugln {
     ($($arg:tt)*) => {
+        #[cfg(not(coverage))]
         if false {
             println!($($arg)*)
         }

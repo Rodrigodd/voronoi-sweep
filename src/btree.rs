@@ -4,13 +4,13 @@ use std::{fmt::Debug, mem::MaybeUninit, ptr::NonNull};
 
 macro_rules! test_assert {
     ($cond:expr) => {
-        #[cfg(debug_assertions)]
+        #[cfg(all(debug_assertions, not(coverage)))]
         {
             assert!($cond);
         }
     };
     ($cond:expr, $($arg:tt)*) => {
-        #[cfg(debug_assertions)]
+        #[cfg(all(debug_assertions, not(coverage)))]
         {
             assert!($cond, $($arg)*);
         }

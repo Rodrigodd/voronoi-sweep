@@ -121,11 +121,13 @@ mod tests {
     #[test]
     fn test_heap() {
         let mut heap = Heap::new(|a: &i32, b: &i32| a.cmp(b));
+        println!("{:?}", heap);
         assert_eq!(heap.pop(), None);
         heap.push(3);
         heap.push(2);
         heap.push(1);
         heap.push(4);
+        println!("{:?}", heap);
         assert_eq!(heap.len(), 4);
         assert_eq!(heap.pop(), Some(1));
         assert_eq!(heap.pop(), Some(2));
@@ -133,6 +135,7 @@ mod tests {
         assert_eq!(heap.pop(), Some(4));
         assert_eq!(heap.pop(), None);
         assert_eq!(heap.len(), 0);
+        println!("{:?}", heap);
     }
 
     proptest! {
