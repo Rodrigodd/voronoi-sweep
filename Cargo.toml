@@ -13,6 +13,10 @@ harness = false
 name = "complexity"
 harness = false
 
+[[bench]]
+name = "btree"
+harness = false
+
 [dependencies]
 
 [dev-dependencies]
